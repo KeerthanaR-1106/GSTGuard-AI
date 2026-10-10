@@ -1,0 +1,187 @@
+{% extends "base.html" %}
+
+{% block title %}Supplier Risk Intelligence &bull; Vendor Scorecards &bull; GSTGuard AI{% endblock %}
+
+{% block content %}
+{% set active_page = 'suppliers' %}
+
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.02em;">
+        Supplier Risk Intelligence
+      </h2>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+        {{ pagination.total }} Vendors Monitored
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Aggregated vendor scorecards computed from transaction consistency, historical anomaly rates, and multi-model risk indices
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/review-queue" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+      <i class="bi bi-list-check me-1"></i>Priority Queue
+    </a>
+  </div>
+</div>
+
+<!-- Search & Sort Filter Card -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-body p-3">
+    <form method="GET" action="/suppliers" class="row g-2 align-items-center">
+      <div class="col-12 col-md-5">
+        <div class="input-icon-wrap">
+          <i class="bi bi-search input-icon text-muted"></i>
+          <input
+            type="text"
+            name="search"
+            class="form-control form-control-sm rounded-pill"
+            placeholder="Search Supplier ID or GSTIN..."
+            value="{{ search or '' }}"
+          />
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <select name="sort_by" class="form-select form-select-sm rounded-pill">
+          <option value="risk_score" {% if sort_by == 'risk_score' %}selected{% endif %}>Sort by: Risk Score (Highest)</option>
+          <option value="high_risk_count" {% if sort_by == 'high_risk_count' %}selected{% endif %}>Sort by: High Risk Invoices</option>
+          <option value="total_invoices" {% if sort_by == 'total_invoices' %}selected{% endif %}>Sort by: Total Invoices</option>
+          <option value="total_taxable_value" {% if sort_by == 'total_taxable_value' %}selected{% endif %}>Sort by: Turnover Value</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <select name="order" class="form-select form-select-sm rounded-pill">
+          <option value="desc" {% if order == 'desc' %}selected{% endif %}>Descending</option>
+          <option value="asc" {% if order == 'asc' %}selected{% endif %}>Ascending</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-2 d-flex gap-2">
+        <button type="submit" class="btn btn-sm btn-primary rounded-pill w-100">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        {% if search or sort_by != 'risk_score' %}
+          <a href="/suppliers" class="btn btn-sm btn-outline-secondary rounded-pill px-3" title="Clear Filters">
+            <i class="bi bi-x-circle"></i>
+          </a>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Suppliers Directory Table -->
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+  <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-building text-primary"></i>
+      <span>Monitored Vendors Ledger</span>
+    </div>
+    <span class="text-muted small">
+      Showing page <strong>{{ pagination.page }}</strong> of <strong>{{ pagination.pages }}</strong>
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+        <tr>
+          <th class="ps-3">Supplier ID</th>
+          <th>GSTIN</th>
+          <th class="text-center">Total Invoices</th>
+          <th class="text-end">Turnover Value</th>
+          <th class="text-center">Suspicious</th>
+          <th class="text-center">High Risk</th>
+          <th class="text-center">Risk Score</th>
+          <th class="text-center">Severity</th>
+          <th class="text-end pe-3">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in suppliers %}
+        <tr style="{% if s.supplier_risk_score >= 70 %}border-left: 3px solid #ef4444;{% elif s.supplier_risk_score >= 40 %}border-left: 3px solid #f59e0b;{% endif %}">
+          <td class="ps-3">
+            <a href="/suppliers/{{ s.supplier_id }}" class="fw-bold text-primary text-decoration-none">
+              {{ s.supplier_id }}
+            </a>
+          </td>
+          <td>
+            <code class="text-secondary font-monospace" style="font-size: 0.75rem;">{{ s.supplier_gstin }}</code>
+          </td>
+          <td class="text-center">
+            <span class="fw-semibold text-dark">{{ s.total_invoices }}</span>
+          </td>
+          <td class="text-end fw-semibold text-dark">
+            ₹{{ "{:,.2f}".format(s.total_taxable_value) }}
+          </td>
+          <td class="text-center">
+            {% if s.suspicious_count > 0 %}
+              <span class="badge bg-warning text-dark rounded-pill">{{ s.suspicious_count }}</span>
+            {% else %}
+              <span class="badge bg-light text-secondary border rounded-pill">0</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            {% if s.high_risk_count > 0 %}
+              <span class="badge bg-danger rounded-pill">{{ s.high_risk_count }}</span>
+            {% else %}
+              <span class="badge bg-light text-secondary border rounded-pill">0</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <span class="score-pill {% if s.supplier_risk_score >= 70 %}score-high{% elif s.supplier_risk_score >= 40 %}score-medium{% else %}score-low{% endif %}">
+              {{ s.supplier_risk_score }}
+            </span>
+          </td>
+          <td class="text-center">
+            {% if s.supplier_risk_level == 'High Risk' %}
+              <span class="risk-badge risk-high">High</span>
+            {% elif s.supplier_risk_level == 'Medium Risk' %}
+              <span class="risk-badge risk-medium">Medium</span>
+            {% else %}
+              <span class="risk-badge risk-low">Low</span>
+            {% endif %}
+          </td>
+          <td class="text-end pe-3">
+            <a href="/suppliers/{{ s.supplier_id }}" class="btn btn-sm btn-outline-primary py-1 px-3 rounded-pill" style="font-size: 0.75rem;">
+              Scorecard &rarr;
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="9" class="text-center py-5 text-muted">
+            <i class="bi bi-search fs-2 d-block mb-2"></i>
+            No suppliers matched the search criteria.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Pagination -->
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-white py-3 border-top d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="text-muted small">
+      Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }} to {{ [pagination.page * pagination.per_page, pagination.total]|min }} of {{ pagination.total }} suppliers
+    </div>
+    <nav>
+      <ul class="pagination pagination-sm mb-0">
+        <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
+          <a class="page-link rounded-pill me-1" href="/suppliers?page={{ pagination.page - 1 }}&search={{ search }}&sort_by={{ sort_by }}&order={{ order }}">&laquo; Prev</a>
+        </li>
+        {% for p in range([1, pagination.page - 2]|max, [pagination.pages + 1, pagination.page + 3]|min) %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link rounded-circle mx-1 text-center" style="width: 28px; height: 28px; padding: 0; line-height: 26px;" href="/suppliers?page={{ p }}&search={{ search }}&sort_by={{ sort_by }}&order={{ order }}">{{ p }}</a>
+        </li>
+        {% endfor %}
+        <li class="page-item {% if pagination.page >= pagination.pages %}disabled{% endif %}">
+          <a class="page-link rounded-pill ms-1" href="/suppliers?page={{ pagination.page + 1 }}&search={{ search }}&sort_by={{ sort_by }}&order={{ order }}">Next &raquo;</a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

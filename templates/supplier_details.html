@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block title %}Supplier Scorecard {{ supplier.supplier_id }} &bull; GSTGuard AI{% endblock %}
+
+{% block content %}
+{% set active_page = 'suppliers' %}
+
+<div class="mb-3">
+  <a href="/suppliers" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+    <i class="bi bi-arrow-left me-1"></i>Back to Supplier Directory
+  </a>
+</div>
+
+<!-- Supplier Scorecard Hero -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-body p-4">
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+      <div>
+        <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+          <h2 class="fw-bold mb-0 text-dark">{{ supplier.supplier_id }}</h2>
+          <span class="risk-badge {% if supplier.supplier_risk_level == 'High Risk' %}risk-high{% elif supplier.supplier_risk_level == 'Medium Risk' %}risk-medium{% else %}risk-low{% endif %}">
+            {{ supplier.supplier_risk_level }}
+          </span>
+        </div>
+        <div class="text-muted small">
+          GSTIN: <code class="text-primary fw-bold font-monospace">{{ supplier.supplier_gstin }}</code>
+          &bull; State Code: <span class="badge bg-light text-dark border">{{ supplier.supplier_gstin[:2] if supplier.supplier_gstin|length >= 2 else 'N/A' }}</span>
+        </div>
+      </div>
+      <div class="text-end">
+        <div class="text-muted small fw-bold text-uppercase" style="letter-spacing: 0.05em;">Supplier Risk Score</div>
+        <div class="display-6 fw-bold {% if supplier.supplier_risk_score >= 70 %}text-danger{% elif supplier.supplier_risk_score >= 40 %}text-warning{% else %}text-success{% endif %}">
+          {{ "%.1f" | format(supplier.supplier_risk_score) }}<span class="fs-6 text-muted">/100</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recommendation Banner -->
+    <div class="alert alert-{{ supplier.recommendation_badge }} rounded-3 mt-3 mb-0 d-flex align-items-center gap-2 py-2 px-3 small">
+      <i class="bi bi-shield-exclamation fs-5"></i>
+      <div>
+        <strong>Compliance Recommendation:</strong> {{ supplier.recommendation }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- KPI Metrics Grid -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100">
+      <div class="stat-icon icon-primary mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-receipt"></i>
+      </div>
+      <div class="stat-value text-dark">{{ supplier.total_invoices }}</div>
+      <div class="stat-label">Total Invoices Billed</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100">
+      <div class="stat-icon icon-info mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-currency-rupee"></i>
+      </div>
+      <div class="stat-value text-primary fs-4">₹{{ "{:,.2f}".format(supplier.total_taxable_value) }}</div>
+      <div class="stat-label">Cumulative Turnover</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100">
+      <div class="stat-icon {% if supplier.suspicious_percentage > 20 %}icon-danger{% else %}icon-warning{% endif %} mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-exclamation-triangle"></i>
+      </div>
+      <div class="stat-value {% if supplier.suspicious_percentage > 20 %}text-danger{% else %}text-warning-emphasis{% endif %}">{{ supplier.suspicious_percentage }}%</div>
+      <div class="stat-label">Suspicious Incidence ({{ supplier.suspicious_count }}/{{ supplier.total_invoices }})</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100">
+      <div class="stat-icon icon-danger mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-graph-up-arrow"></i>
+      </div>
+      <div class="stat-value text-danger">{{ supplier.max_risk_score }}</div>
+      <div class="stat-label">Peak Risk Score (Avg: {{ supplier.avg_risk_score }})</div>
+    </div>
+  </div>
+</div>
+
+<!-- Historical Invoices Table -->
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+  <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+    <span class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-receipt text-primary"></i>Invoices Issued by Vendor ({{ supplier.invoices | length }})
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+        <tr>
+          <th class="ps-3">Invoice No</th>
+          <th>Date</th>
+          <th>Category</th>
+          <th class="text-end">Taxable Value</th>
+          <th class="text-center">GST Rate</th>
+          <th class="text-center">Risk Score</th>
+          <th>Anomaly Type</th>
+          <th>Status</th>
+          <th class="text-end pe-3">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for inv in supplier.invoices %}
+        <tr style="{% if inv.risk_level == 'High Risk' %}border-left: 3px solid #ef4444; background: rgba(239, 68, 68, 0.02);{% elif inv.risk_level == 'Medium Risk' %}border-left: 3px solid #f59e0b; background: rgba(245, 158, 11, 0.02);{% endif %}">
+          <td class="ps-3">
+            <a href="/invoice/{{ inv.invoice_no }}" class="fw-bold text-primary font-monospace text-decoration-none">
+              {{ inv.invoice_no }}
+            </a>
+          </td>
+          <td class="text-muted">{{ inv.invoice_date }}</td>
+          <td><span class="badge bg-light text-dark border">{{ inv.product_category }}</span></td>
+          <td class="text-end fw-semibold text-dark">₹{{ "{:,.2f}".format(inv.taxable_value) }}</td>
+          <td class="text-center">{{ inv.gst_rate }}%</td>
+          <td class="text-center">
+            <span class="score-pill {% if inv.risk_score >= 70 %}score-high{% elif inv.risk_score >= 40 %}score-medium{% else %}score-low{% endif %}">
+              {{ inv.risk_score }}
+            </span>
+          </td>
+          <td>
+            <span class="badge bg-light text-dark border">{{ inv.anomaly_type }}</span>
+          </td>
+          <td>
+            <span class="badge bg-secondary-subtle text-secondary">{{ inv.investigation_status }}</span>
+          </td>
+          <td class="text-end pe-3">
+            <a href="/invoice/{{ inv.invoice_no }}" class="btn btn-sm btn-outline-primary py-1 px-3 rounded-pill" style="font-size: 0.75rem;">
+              Audit &rarr;
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

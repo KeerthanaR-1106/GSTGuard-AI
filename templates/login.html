@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In &bull; GSTGuard AI Compliance Platform{% endblock %}
+
+{% block body_class %}login-page{% endblock %}
+
+{% block extra_css %}
+<style>
+  .login-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(99, 102, 241, 0.1);
+    color: var(--primary);
+    border: 1px solid rgba(99, 102, 241, 0.25);
+    border-radius: 50px;
+    padding: 4px 12px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+  }
+  .btn-login-submit {
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    color: #ffffff;
+    border: none;
+    padding: 12px 20px;
+    border-radius: 10px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+    transition: all 0.2s ease;
+  }
+  .btn-login-submit:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(99, 102, 241, 0.45);
+    color: #ffffff;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="login-wrapper">
+  <!-- Extra decorative floating blur circles -->
+  <div class="login-blob login-blob-1"></div>
+  <div class="login-blob login-blob-2"></div>
+
+  <div class="glass-card">
+    <div class="text-center mb-3">
+      <div class="login-card-badge">
+        <i class="bi bi-shield-shaded text-primary"></i>
+        <span>MSME Compliance Portal</span>
+      </div>
+
+      <div class="login-logo justify-content-center mb-1">
+        <div class="logo-icon">
+          <i class="bi bi-shield-check"></i>
+        </div>
+        <div class="logo-text">GSTGuard AI</div>
+      </div>
+      <p class="text-muted small mb-0">
+        Intelligent GST Invoice Risk &amp; Anomaly Detection System
+      </p>
+    </div>
+
+    <!-- Flash message alerts -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div
+            class="alert alert-{{ 'danger' if category == 'error' else ('success' if category == 'success' else 'warning') }} py-2 px-3 small d-flex align-items-center gap-2 mb-3 rounded-3"
+            role="alert"
+          >
+            <i class="bi bi-{{ 'exclamation-circle-fill' if category == 'error' else 'check-circle-fill' }}"></i>
+            <div>{{ message }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <!-- Login form -->
+    <form method="POST" action="/login" autocomplete="off">
+      <div class="mb-3">
+        <label for="username" class="form-label">Username / Officer ID</label>
+        <div class="input-icon-wrap">
+          <i class="bi bi-person input-icon"></i>
+          <input
+            type="text"
+            class="form-control"
+            id="username"
+            name="username"
+            placeholder="Enter username"
+            required
+            autofocus
+            value="{{ request.form.get('username', '') }}"
+          />
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+          <label for="password" class="form-label">Password</label>
+        </div>
+        <div class="input-icon-wrap">
+          <i class="bi bi-lock input-icon"></i>
+          <input
+            type="password"
+            class="form-control"
+            id="password"
+            name="password"
+            placeholder="Enter password"
+            required
+          />
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-login-submit w-100 justify-content-center">
+        <span>Sign In to Dashboard</span>
+        <i class="bi bi-arrow-right ms-1"></i>
+      </button>
+    </form>
+
+    <div class="text-center mt-4 pt-2 border-top">
+      <p class="text-muted" style="font-size: 0.75rem; margin-bottom: 0;">
+        <i class="bi bi-lock-fill text-secondary me-1"></i>
+        Restricted to Authorized MSME Tax Compliance Personnel
+      </p>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+
+{% block title %}Priority Review Worklist &bull; GSTGuard AI{% endblock %}
+
+{% block content %}
+{% set active_page = 'review-queue' %}
+
+<!-- Page Header -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.02em;">
+        Priority Review Queue
+      </h2>
+      <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1 small">
+        {{ queue | length }} Items Pending Audit
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Ranked verification worklist using the screening index, detector flags, and taxable exposure. Detector agreement is not proof of fraud.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/invoices" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-receipt me-1"></i>All Invoices
+    </a>
+    <a href="/copilot" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+      <i class="bi bi-stars text-warning me-1"></i>Copilot Query
+    </a>
+  </div>
+</div>
+
+<!-- Queue KPI Cards -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100" style="border-top: 3px solid #ef4444;">
+      <div class="stat-icon icon-danger mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-exclamation-octagon"></i>
+      </div>
+      <div class="stat-value text-danger">{{ queue | length }}</div>
+      <div class="stat-label">Actionable Queue Items</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100" style="border-top: 3px solid #f59e0b;">
+      <div class="stat-icon icon-warning mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-diagram-3"></i>
+      </div>
+      <div class="stat-value text-warning-emphasis">
+        {{ queue | selectattr('consensus_count', 'equalto', 3) | list | length }}
+      </div>
+      <div class="stat-label">3/3 Detectors Flagged</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100" style="border-top: 3px solid #6366f1;">
+      <div class="stat-icon icon-primary mb-2" style="width: 44px; height: 44px; font-size: 1.25rem;">
+        <i class="bi bi-graph-up-arrow"></i>
+      </div>
+      <div class="stat-value text-primary">
+        {% if queue %}
+          {{ "%.1f"|format((queue | map(attribute='priority_score') | sum) / (queue | length)) }}
+        {% else %}
+          0.0
+        {% endif %}
+      </div>
+      <div class="stat-label">Average Queue Priority Index</div>
+    </div>
+  </div>
+  <div class="col-sm-6 col-lg-3">
+    <div class="stat-card h-100" style="border-top: 3px solid #0d9488;">
+      <div class="stat-icon mb-2" style="width: 44px; height: 44px; font-size: 1.25rem; background: rgba(13, 148, 136, 0.12); color: #0d9488;">
+        <i class="bi bi-shield-shaded"></i>
+      </div>
+      <div class="stat-value text-dark fs-4">
+        {% set total_exposure = queue | map(attribute='taxable_value') | sum %}
+        ₹{{ "{:,.0f}".format(total_exposure) }}
+      </div>
+      <div class="stat-label">Total Taxable Exposure</div>
+    </div>
+  </div>
+</div>
+
+<!-- Priority Table Card -->
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+  <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-sort-numeric-down text-primary"></i>Ranked Compliance Audit Worklist
+    </span>
+    <span class="badge bg-light text-secondary border rounded-pill">
+      Top {{ queue | length }} Priority Invoices
+    </span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+        <tr>
+          <th class="ps-3" style="width: 50px;">Rank</th>
+          <th>Priority</th>
+          <th>Invoice No</th>
+          <th>Date</th>
+          <th>Supplier ID</th>
+          <th class="text-end">Taxable Value</th>
+          <th>Anomaly Type</th>
+          <th>Detector Flags</th>
+          <th>Investigation Status</th>
+          <th class="text-end pe-3">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in queue %}
+        <tr style="{% if item.priority_score >= 80 %}border-left: 4px solid #ef4444;{% elif item.priority_score >= 60 %}border-left: 4px solid #f59e0b;{% endif %}">
+          <td class="ps-3 fw-bold text-muted">#{{ loop.index }}</td>
+          <td>
+            <span class="score-pill {% if item.priority_score >= 80 %}score-high{% elif item.priority_score >= 60 %}score-medium{% else %}score-low{% endif %}">
+              {{ item.priority_score }}
+            </span>
+          </td>
+          <td>
+            <a href="/invoice/{{ item.invoice_no }}" class="fw-bold text-primary font-monospace text-decoration-none">
+              {{ item.invoice_no }}
+            </a>
+          </td>
+          <td class="text-muted">{{ item.invoice_date }}</td>
+          <td>
+            <a href="/suppliers/{{ item.supplier_id }}" class="text-dark text-decoration-none fw-semibold">
+              {{ item.supplier_id }}
+            </a>
+          </td>
+          <td class="text-end fw-semibold text-dark">₹{{ "{:,.2f}".format(item.taxable_value) }}</td>
+          <td>
+            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">{{ item.anomaly_type }}</span>
+          </td>
+          <td>
+            <span class="badge {% if item.consensus_count == 3 %}bg-danger{% elif item.consensus_count == 2 %}bg-warning text-dark{% else %}bg-primary{% endif %} rounded-pill">
+              {{ item.consensus_count }}/3 Models
+            </span>
+          </td>
+          <td>
+            <select
+              class="form-select form-select-sm status-selector rounded-pill"
+              data-invoice="{{ item.invoice_no }}"
+              style="width: 150px; font-size: 0.78rem;"
+            >
+              <option value="NEW" {% if item.investigation_status == 'NEW' %}selected{% endif %}>NEW</option>
+              <option value="UNDER REVIEW" {% if item.investigation_status == 'UNDER REVIEW' %}selected{% endif %}>UNDER REVIEW</option>
+              <option value="CONFIRMED IRREGULARITY" {% if item.investigation_status == 'CONFIRMED IRREGULARITY' %}selected{% endif %}>CONFIRMED IRREGULARITY</option>
+              <option value="FALSE POSITIVE" {% if item.investigation_status == 'FALSE POSITIVE' %}selected{% endif %}>FALSE POSITIVE</option>
+              <option value="RESOLVED" {% if item.investigation_status == 'RESOLVED' %}selected{% endif %}>RESOLVED</option>
+              <option value="VERIFIED" {% if item.investigation_status == 'VERIFIED' %}selected{% endif %}>VERIFIED</option>
+              <option value="CLEARED" {% if item.investigation_status == 'CLEARED' %}selected{% endif %}>CLEARED</option>
+              <option value="ESCALATED" {% if item.investigation_status == 'ESCALATED' %}selected{% endif %}>ESCALATED</option>
+            </select>
+          </td>
+          <td class="text-end pe-3">
+            <a href="/invoice/{{ item.invoice_no }}" class="btn btn-sm btn-outline-danger py-1 px-3 rounded-pill" style="font-size:0.75rem;">
+              Audit &rarr;
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" class="text-center py-5 text-muted">
+            <i class="bi bi-check-circle-fill text-success fs-2 d-block mb-2"></i>
+            All priority queue items have been reviewed or cleared!
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  document.querySelectorAll(".status-selector").forEach(function (selectEl) {
+    selectEl.addEventListener("change", function () {
+      var invoiceNo = this.getAttribute("data-invoice");
+      var newStatus = this.value;
+      var el = this;
+      var previousStatus = el.dataset.savedValue || newStatus;
+
+      el.disabled = true;
+      fetch("/api/investigations/" + encodeURIComponent(invoiceNo), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus })
+      })
+      .then(function (res) {
+        return res.json().then(function (data) {
+          if (!res.ok) throw new Error(data.message || "Request failed");
+          return data;
+        });
+      })
+      .then(function (data) {
+        el.disabled = false;
+        if (data.status === "success") {
+          el.dataset.savedValue = newStatus;
+          el.classList.add("border-success");
+          setTimeout(function () { el.classList.remove("border-success"); }, 2000);
+        } else {
+          el.value = previousStatus;
+          alert("Could not update status: " + (data.message || "Unknown error"));
+        }
+      })
+      .catch(function (err) {
+        el.disabled = false;
+        el.value = previousStatus;
+        alert("Network error: " + err);
+      });
+    });
+    selectEl.dataset.savedValue = selectEl.value;
+  });
+});
+</script>
+{% endblock %}

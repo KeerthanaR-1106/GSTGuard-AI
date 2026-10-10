@@ -1,0 +1,12 @@
+anomaly_type,total,if_detected,if_rate,lof_detected,lof_rate,zscore_detected,zscore_rate,union_detected,union_rate,majority_detected,majority_rate
+Duplicate Transaction,91,91,1.0,7,0.0769,91,1.0,91,1.0,91,1.0
+Extreme Invoice Amount,91,11,0.1209,17,0.1868,91,1.0,91,1.0,23,0.2527
+Extreme Unit Price,91,91,1.0,37,0.4066,91,1.0,91,1.0,91,1.0
+Future Invoice Date,90,13,0.1444,3,0.0333,90,1.0,90,1.0,15,0.1667
+Incorrect CGST SGST Split,91,36,0.3956,42,0.4615,55,0.6044,75,0.8242,41,0.4505
+Incorrect IGST,91,17,0.1868,39,0.4286,62,0.6813,84,0.9231,21,0.2308
+Tax Calculation Mismatch,91,6,0.0659,49,0.5385,52,0.5714,72,0.7912,29,0.3187
+Unusual Buyer Activity,91,63,0.6923,16,0.1758,91,1.0,91,1.0,64,0.7033
+Unusual Discount,91,2,0.022,4,0.044,91,1.0,91,1.0,5,0.0549
+Unusual Quantity,91,88,0.967,22,0.2418,91,1.0,91,1.0,90,0.989
+Unusual Supplier Activity,91,20,0.2198,13,0.1429,91,1.0,91,1.0,23,0.2527

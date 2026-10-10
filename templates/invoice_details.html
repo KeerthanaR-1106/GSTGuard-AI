@@ -1,0 +1,495 @@
+{% extends "base.html" %}
+
+{% block title %}Audit Invoice {{ invoice.invoice_no }} &bull; Risk Story &bull; GSTGuard AI{% endblock %}
+
+{% block extra_css %}
+<style>
+  .risk-hero {
+    border-radius: 16px;
+    padding: 28px 32px;
+    position: relative;
+    overflow: hidden;
+    color: #ffffff;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+    margin-bottom: 24px;
+  }
+  .risk-hero-high {
+    background: linear-gradient(135deg, #1f1118 0%, #3b111e 50%, #7f1d1d 100%);
+    box-shadow: 0 12px 35px rgba(239, 68, 68, 0.25);
+  }
+  .risk-hero-medium {
+    background: linear-gradient(135deg, #1f1a11 0%, #3b2a11 50%, #78350f 100%);
+    box-shadow: 0 12px 35px rgba(245, 158, 11, 0.25);
+  }
+  .risk-hero-low {
+    background: linear-gradient(135deg, #0d1f18 0%, #113b29 50%, #064e3b 100%);
+    box-shadow: 0 12px 35px rgba(16, 185, 129, 0.25);
+  }
+  .risk-pattern-badge {
+    background-color: rgba(255, 255, 255, 0.16);
+    color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+  }
+  .score-display {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+  .ai-story-box {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-top: 20px;
+  }
+  .action-item-card {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+    padding: 16px;
+    transition: all 0.2s;
+  }
+  .action-item-card:hover {
+    border-color: #c7d2fe;
+    box-shadow: var(--shadow-sm);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set active_page = 'invoices' %}
+
+<!-- Navigation & Top Actions -->
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+  <div class="d-flex align-items-center gap-2">
+    <a href="/invoices" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-arrow-left me-1"></i>All Invoices
+    </a>
+    <a href="/review-queue" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+      <i class="bi bi-list-check me-1"></i>Priority Queue
+    </a>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <a href="/copilot?invoice_no={{ invoice.invoice_no }}" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+      <i class="bi bi-stars text-warning me-1"></i>Ask Copilot
+    </a>
+    <a href="/invoice/{{ invoice.invoice_no }}/report" target="_blank" class="btn btn-sm btn-primary rounded-pill px-3">
+      <i class="bi bi-file-earmark-pdf me-1"></i>Compliance Audit Report &rarr;
+    </a>
+  </div>
+</div>
+
+<!-- 1. HERO: INVOICE RISK STORY HEADER -->
+<div class="risk-hero {% if invoice.risk_score >= 70 %}risk-hero-high{% elif invoice.risk_score >= 40 %}risk-hero-medium{% else %}risk-hero-low{% endif %}">
+  <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+    <div>
+      <div class="d-flex align-items-center gap-2 mb-2 flex-wrap">
+        <h2 class="fw-bold mb-0 text-white font-monospace">{{ invoice.invoice_no }}</h2>
+        <span class="badge {% if invoice.risk_score >= 70 %}bg-danger{% elif invoice.risk_score >= 40 %}bg-warning text-dark{% else %}bg-success{% endif %} rounded-pill px-3 py-1 fs-6">
+          {% if invoice.risk_score >= 70 %}High Anomaly Risk · Requires Verification{% elif invoice.risk_score >= 40 %}Anomaly Signal · Review Suggested{% else %}Low Anomaly Signal{% endif %}
+        </span>
+        <span class="badge risk-pattern-badge rounded-pill px-3 py-1">
+          {{ invoice.anomaly_type }}
+        </span>
+      </div>
+      <div class="text-white-50 small">
+        Date: <strong class="text-white">{{ invoice.invoice_date }}</strong>
+        &bull; Supplier: <a href="/suppliers/{{ invoice.supplier_id }}" class="text-white fw-bold text-decoration-underline">{{ invoice.supplier_id }}</a>
+        (<code class="text-white-50">{{ invoice.supplier_gstin }}</code>)
+        &bull; Buyer: <strong class="text-white">{{ invoice.buyer_id }}</strong>
+      </div>
+    </div>
+
+    <!-- Large Risk Meter Display -->
+    <div class="text-end">
+      <div class="text-white-50 small fw-bold text-uppercase" style="letter-spacing: 0.05em;">Batch-relative anomaly index</div>
+      <div class="score-display text-white">
+        {{ "%.1f" | format(invoice.risk_score) }}<span class="fs-5 text-white-50">/100</span>
+      </div>
+      <div class="risk-bar mt-2" style="width: 150px; background: rgba(255,255,255,0.2);">
+        <div
+          class="risk-bar-fill progress-bar {% if invoice.risk_score >= 70 %}fill-high{% elif invoice.risk_score >= 40 %}fill-medium{% else %}fill-low{% endif %}"
+          style="width: {{ invoice.risk_score }}%;"
+        ></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Narrative Summary -->
+  <div class="ai-story-box">
+    <div class="d-flex align-items-start gap-3">
+      <div class="stat-icon icon-primary flex-shrink-0" style="width: 38px; height: 38px; font-size: 1.1rem; background: rgba(255,255,255,0.2); color: #ffffff;">
+        <i class="bi bi-robot"></i>
+      </div>
+      <div>
+        <div class="fw-bold text-white mb-1 small text-uppercase" style="letter-spacing: 0.05em;">AI Risk Assessment Narrative</div>
+        <div class="text-white-50 small lh-base" style="color: rgba(255,255,255,0.9) !important;">
+          {{ explanation.summary }}
+        </div>
+        <div class="small text-white-50 mt-3">
+          The displayed anomaly type is an analysis-generated screening classification. Source provenance and any synthetic ground-truth label are not stored with this invoice; model flags are not confirmed findings.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2. INVESTIGATION WORKFLOW TRACKER -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-clipboard-check text-primary"></i>
+      <span>Compliance Investigation Tracker</span>
+    </div>
+    <span id="investigation-last-updated" class="badge bg-light text-muted border">
+      {% if invoice.investigation.updated_at %}
+        Last updated: {{ invoice.investigation.updated_at }}
+      {% else %}
+        Status: NEW (Pending Review)
+      {% endif %}
+    </span>
+  </div>
+  <div class="card-body p-3 p-md-4">
+    <form id="investigation-form" class="row g-3 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small fw-bold text-secondary">Investigation Status</label>
+        <select id="inv-status" class="form-select form-select-sm rounded-pill">
+          <option value="NEW" {% if invoice.investigation.status == 'NEW' %}selected{% endif %}>NEW (Unreviewed)</option>
+          <option value="UNDER REVIEW" {% if invoice.investigation.status == 'UNDER REVIEW' %}selected{% endif %}>UNDER REVIEW</option>
+          <option value="CONFIRMED IRREGULARITY" {% if invoice.investigation.status == 'CONFIRMED IRREGULARITY' %}selected{% endif %}>CONFIRMED IRREGULARITY</option>
+          <option value="FALSE POSITIVE" {% if invoice.investigation.status == 'FALSE POSITIVE' %}selected{% endif %}>FALSE POSITIVE</option>
+          <option value="RESOLVED" {% if invoice.investigation.status == 'RESOLVED' %}selected{% endif %}>RESOLVED</option>
+          <option value="VERIFIED" {% if invoice.investigation.status == 'VERIFIED' %}selected{% endif %}>VERIFIED (Compliant)</option>
+          <option value="CLEARED" {% if invoice.investigation.status == 'CLEARED' %}selected{% endif %}>CLEARED (No Fraud)</option>
+          <option value="ESCALATED" {% if invoice.investigation.status == 'ESCALATED' %}selected{% endif %}>ESCALATED (Audit Needed)</option>
+        </select>
+      </div>
+      <div class="col-12 col-md-3">
+        <label class="form-label small fw-bold text-secondary">Assigned Compliance Auditor</label>
+        <input
+          type="text"
+          id="inv-assigned"
+          class="form-control form-control-sm rounded-pill"
+          maxlength="100"
+          value="{{ invoice.investigation.assigned_to or 'Compliance Review Officer' }}"
+        />
+      </div>
+      <div class="col-12 col-md-4">
+        <label class="form-label small fw-bold text-secondary">Audit Finding Notes</label>
+        <textarea
+          id="inv-notes"
+          class="form-control form-control-sm"
+          rows="2"
+          maxlength="10000"
+          placeholder="E-way bill verify, supplier confirmation reference..."
+        >{{ invoice.investigation.notes or '' }}</textarea>
+      </div>
+      <div class="col-12 col-md-2">
+        <button type="submit" id="inv-save-btn" class="btn btn-sm btn-primary w-100 rounded-pill">
+          <i class="bi bi-save me-1"></i>Save Status
+        </button>
+      </div>
+    </form>
+    <div id="inv-status-alert" class="mt-3" style="display: none;"></div>
+    <div class="mt-4">
+      <h6 class="fw-bold text-secondary small text-uppercase">Investigation audit history</h6>
+      {% if invoice.investigation_history %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead><tr><th>Updated</th><th>Reviewer</th><th>Status change</th><th>Decision notes</th></tr></thead>
+          <tbody>
+          {% for event in invoice.investigation_history %}
+            <tr>
+              <td class="text-nowrap">{{ event.updated_at }}</td>
+              <td>{{ event.reviewer }}</td>
+              <td>{{ event.previous_status }} → {{ event.new_status }}</td>
+              <td class="text-break">{{ event.decision_notes or "No notes recorded" }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="small text-muted mb-0">No investigation updates have been recorded.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <!-- 3. EMPIRICAL EVIDENCE TABLE -->
+  <div class="col-12 col-lg-7">
+    <div class="card border-0 shadow-sm rounded-4 h-100 overflow-hidden">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-bold text-dark d-flex align-items-center gap-2">
+          <i class="bi bi-search text-primary"></i>Invoice Arithmetic &amp; Screening Evidence
+        </span>
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill">
+          {{ explanation.flagged_evidence_count }} Deviations Detected
+        </span>
+      </div>
+      <div class="px-3 py-2 bg-light border-bottom small text-muted">
+        Peer price/quantity benchmarks are unavailable and are not statutory limits. Arithmetic matches do not establish legal compliance.
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+            <tr>
+              <th class="ps-3">Feature</th>
+              <th>Actual Value</th>
+              <th>Reference / Expected</th>
+              <th class="pe-3">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in explanation.evidence %}
+            <tr style="{% if item.status == 'MISMATCH' %}border-left: 3px solid #ef4444; background: rgba(239,68,68,0.02);{% endif %}">
+              <td class="ps-3 fw-semibold text-dark">
+                {{ item.feature }}
+                <div class="text-muted" style="font-size: 0.72rem;">{{ item.detail }}</div>
+              </td>
+              <td class="fw-bold text-dark font-monospace">{{ item.actual }}</td>
+              <td class="text-muted">{{ item.benchmark }}</td>
+              <td class="pe-3">
+                <span class="badge bg-{{ item.badge_class }} rounded-pill py-1 px-2">
+                  {{ item.status_label }}
+                </span>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. ML MODEL CONSENSUS BREAKDOWN -->
+  <div class="col-12 col-lg-5">
+    <div class="card border-0 shadow-sm rounded-4 h-100">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <span class="fw-bold text-dark d-flex align-items-center gap-2">
+          <i class="bi bi-diagram-3 text-primary"></i>ML Model Consensus
+        </span>
+        <span class="badge {% if explanation.consensus_count >= 2 %}bg-danger{% else %}bg-success{% endif %} rounded-pill">
+          {{ explanation.consensus_count }}/3 detectors flagged · not proof
+        </span>
+      </div>
+      <div class="card-body p-3">
+        <div class="alert alert-light border small mb-3">
+          Weighted formula: <strong>40% Isolation Forest + 40% LOF + 20% Z-score</strong>.
+          Model contributions sum to the 0–100 batch-relative anomaly index. Categories: Low &lt;40,
+          Medium 40–69.99, High ≥70. Scores are not fraud probabilities; flags use detector outputs.
+        </div>
+        <div class="d-flex flex-column gap-3">
+          {% for m in explanation.models %}
+          <div class="p-3 border rounded-3 bg-white" style="border-left: 4px solid {% if m.flagged %}#ef4444{% else %}#10b981{% endif %} !important;">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="fw-bold text-dark">{{ m.name }}</span>
+              <span class="badge bg-{{ m.badge_class }} rounded-pill">
+                {% if m.flagged %}FLAGGED ANOMALOUS{% else %}NORMAL{% endif %}
+              </span>
+            </div>
+            <div class="text-muted small mb-2">{{ m.type }} &bull; Weight: {{ m.weight }}</div>
+            <div class="d-flex justify-content-between align-items-center p-2 bg-light rounded-3 small">
+              <span class="text-muted">Raw Metric: <code class="text-primary">{{ m.raw_score }}</code></span>
+              <span class="text-secondary fw-semibold">{{ m.assessment }}</span>
+            </div>
+            <div class="small text-muted mt-1">
+              Weighted score contribution:
+              {% if m.contribution is not none %}{{ "%.2f"|format(m.contribution) }} points{% else %}Unavailable for this stored analysis{% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 5. MSME COMPLIANCE ACTION CENTER -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <span class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-shield-check text-primary"></i>MSME Compliance Action Center
+    </span>
+    <span class="badge bg-{{ recommendations.workflow_badge }} rounded-pill px-3 py-1">
+      Recommended Action: {{ recommendations.workflow_label }}
+    </span>
+  </div>
+  <div class="card-body p-4">
+    <div class="mb-3">
+      <h6 class="fw-bold text-dark mb-1">{{ recommendations.title }}</h6>
+      <p class="text-secondary small mb-2">{{ recommendations.description }}</p>
+      <div class="alert alert-warning py-2 px-3 small rounded-3 mb-3 d-flex align-items-center gap-2">
+        <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+        <span><strong>Verification context:</strong> {{ recommendations.risk_impact }}</span>
+      </div>
+    </div>
+
+    <!-- Prescribed Checklist -->
+    <h6 class="fw-bold text-secondary small text-uppercase mb-3" style="letter-spacing: 0.05em;">Suggested verification checklist:</h6>
+    <div class="row g-3">
+      {% for act in recommendations.actions %}
+      <div class="col-12 col-md-6">
+        <div class="action-item-card h-100">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="fw-bold text-dark small">{{ act.action }}</span>
+            <span class="badge {% if act.priority == 'HIGH' %}bg-danger{% elif act.priority == 'MEDIUM' %}bg-warning text-dark{% else %}bg-primary{% endif %} rounded-pill">
+              {{ act.priority }} Priority
+            </span>
+          </div>
+          <div class="text-muted small mb-2">{{ act.detail }}</div>
+          <div class="text-secondary small mb-2"><strong>Why suggested:</strong> {{ act.why_recommended }}</div>
+          <div class="text-primary small">
+            <i class="bi bi-file-earmark-check me-1"></i>Required Proof: <code>{{ act.doc_required }}</code>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- 6. INVOICE TAX COMPONENTS -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-header bg-white py-3 border-bottom">
+    <span class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-receipt-cutoff text-primary"></i>Transaction Values &amp; Tax Components
+    </span>
+  </div>
+  <div class="card-body p-4">
+    <div class="row g-4">
+      <div class="col-12 col-md-6 border-end-md">
+        <h6 class="fw-bold text-secondary small text-uppercase border-bottom pb-2 mb-3" style="letter-spacing: 0.05em;">Transaction Attributes</h6>
+        <table class="table table-sm table-borderless small mb-0">
+          <tbody>
+            <tr>
+              <td class="text-muted">Product Category:</td>
+              <td class="fw-semibold text-dark">{{ invoice.product_category }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">HSN Code:</td>
+              <td><span class="font-monospace text-primary fw-bold">{{ invoice.hsn_code }}</span></td>
+            </tr>
+            <tr>
+              <td class="text-muted">Billed Quantity:</td>
+              <td class="fw-semibold text-dark">{{ "{:,.1f}".format(invoice.quantity) }} units</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Unit Price:</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.unit_price) }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Trade Discount:</td>
+              <td class="fw-semibold text-dark">{{ invoice.discount_percentage }}% (₹{{ "{:,.2f}".format(invoice.discount_amount) }})</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Payment Mode:</td>
+              <td><span class="badge bg-light text-dark border">{{ invoice.payment_method }}</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <h6 class="fw-bold text-secondary small text-uppercase border-bottom pb-2 mb-3" style="letter-spacing: 0.05em;">Recorded GST Tax Components</h6>
+        <table class="table table-sm table-borderless small mb-0">
+          <tbody>
+            <tr>
+              <td class="text-muted">Taxable Value:</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.taxable_value) }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">GST Slab Rate:</td>
+              <td><span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill">{{ invoice.gst_rate }}%</span></td>
+            </tr>
+            <tr>
+              <td class="text-muted">CGST (Intra-State 50%):</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.cgst) }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">SGST (Intra-State 50%):</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.sgst) }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">IGST (Inter-State):</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.igst) }}</td>
+            </tr>
+            <tr>
+              <td class="text-muted">Compensation Cess:</td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.2f}".format(invoice.cess_amount) }} ({{ invoice.cess_rate }}%)</td>
+            </tr>
+            <tr class="border-top">
+              <td class="fw-bold text-dark pt-2">Total Tax:</td>
+              <td class="fw-bold text-dark pt-2">₹{{ "{:,.2f}".format(invoice.total_tax) }}</td>
+            </tr>
+            <tr>
+              <td class="fw-bold text-primary fs-6">Grand Total Invoice:</td>
+              <td class="fw-bold text-primary fs-6">₹{{ "{:,.2f}".format(invoice.total_amount) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var invForm = document.getElementById("investigation-form");
+  var saveBtn = document.getElementById("inv-save-btn");
+  var alertBox = document.getElementById("inv-status-alert");
+  var updatedText = document.getElementById("investigation-last-updated");
+  var invoiceNo = {{ invoice.invoice_no|tojson }};
+
+  invForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+
+    var status = document.getElementById("inv-status").value;
+    var assignedTo = document.getElementById("inv-assigned").value;
+    var notes = document.getElementById("inv-notes").value;
+
+    fetch("/api/investigations/" + encodeURIComponent(invoiceNo), {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: status,
+        assigned_to: assignedTo,
+        notes: notes
+      })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save Status';
+      if (data.status === "success") {
+        alertBox.className = "alert alert-success py-2 px-3 small rounded-pill";
+        alertBox.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i> Investigation record saved successfully!';
+        alertBox.style.display = "block";
+        if (data.data && data.data.updated_at) {
+          updatedText.textContent = "Last updated: " + data.data.updated_at;
+        }
+        setTimeout(function () { alertBox.style.display = "none"; }, 4000);
+      } else {
+        alertBox.className = "alert alert-danger py-2 px-3 small rounded-pill";
+        alertBox.textContent = "Error saving status: " + (data.message || "Unknown error");
+        alertBox.style.display = "block";
+      }
+    })
+    .catch(function (err) {
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = '<i class="bi bi-save me-1"></i>Save Status';
+      alertBox.className = "alert alert-danger py-2 px-3 small rounded-pill";
+      alertBox.textContent = "Network error: " + err.message;
+      alertBox.style.display = "block";
+    });
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compliance Audit Report - {{ report.invoice.invoice_no }} &bull; GSTGuard AI</title>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+  />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+  />
+  <style>
+    body {
+      background-color: #f8fafc;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #1e293b;
+      padding: 2rem 0;
+    }
+    .report-sheet {
+      max-width: 860px;
+      margin: 0 auto;
+      background: #ffffff;
+      padding: 3rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+      border: 1px solid #e2e8f0;
+    }
+    .watermark {
+      position: absolute;
+      top: 35%;
+      left: 20%;
+      font-size: 6rem;
+      font-weight: 900;
+      color: rgba(220, 53, 69, 0.04);
+      transform: rotate(-30deg);
+      pointer-events: none;
+      user-select: none;
+    }
+    @media print {
+      body {
+        background-color: #ffffff;
+        padding: 0;
+      }
+      .report-sheet {
+        box-shadow: none;
+        border: none;
+        padding: 1.5rem;
+        max-width: 100%;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Floating Print Controls -->
+  <div class="container mb-3 no-print" style="max-width: 860px;">
+    <div class="d-flex justify-content-between align-items-center bg-white p-3 rounded shadow-sm border">
+      <div class="d-flex align-items-center gap-2">
+        <i class="bi bi-shield-check text-primary fs-4"></i>
+        <div>
+          <strong class="d-block">GSTGuard AI Compliance Report</strong>
+          <small class="text-muted">Report ID: {{ report.report_id }}</small>
+        </div>
+      </div>
+      <div class="d-flex gap-2">
+        <button onclick="window.print()" class="btn btn-primary btn-sm px-3">
+          <i class="bi bi-printer me-1"></i>Print / Save as PDF
+        </button>
+        <button onclick="window.close()" class="btn btn-outline-secondary btn-sm px-3">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="report-sheet position-relative">
+    <div class="watermark">GSTGUARD</div>
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-4">
+      <div>
+        <h3 class="fw-bold text-dark mb-0 d-flex align-items-center gap-2">
+          <i class="bi bi-shield-shaded text-primary"></i>
+          <span>GSTGuard AI</span>
+        </h3>
+        <p class="text-muted small mb-0">MSME GST Compliance &amp; Invoice Risk Intelligence Platform</p>
+      </div>
+      <div class="text-end">
+        <div class="badge bg-light text-dark border px-2 py-1 mb-1">AUDIT SUMMARY</div>
+        <div class="small text-muted">Generated: {{ report.generated_at }}</div>
+        <div class="small text-muted">Report Ref: <code>{{ report.report_id }}</code></div>
+      </div>
+    </div>
+
+    <!-- Risk Finding Hero -->
+    <div class="p-3 rounded-3 mb-4 border {% if report.invoice.risk_score >= 70 %}border-danger bg-danger-subtle{% elif report.invoice.risk_score >= 40 %}border-warning bg-warning-subtle{% else %}border-success bg-success-subtle{% endif %}">
+      <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+        <div>
+          <div class="small fw-semibold text-uppercase text-secondary">Target Invoice</div>
+          <h4 class="fw-bold mb-0 text-dark">{{ report.invoice.invoice_no }}</h4>
+          <span class="badge {% if report.invoice.risk_score >= 70 %}bg-danger{% elif report.invoice.risk_score >= 40 %}bg-warning text-dark{% else %}bg-success{% endif %} mt-1">
+            {{ report.invoice.risk_level }} · Batch-relative anomaly index: {{ report.invoice.risk_score }}/100
+          </span>
+          <span class="badge bg-light text-dark border ms-1 mt-1">
+            Type: {{ report.invoice.anomaly_type }}
+          </span>
+        </div>
+        <div class="text-end">
+          <div class="small fw-semibold text-uppercase text-secondary">Investigation Status</div>
+          <span class="badge bg-dark fs-6 px-3 py-1">{{ report.status }}</span>
+          <div class="small text-muted mt-1">Auditor: {{ report.auditor }}</div>
+        </div>
+      </div>
+      <hr class="my-2 border-secondary-subtle">
+      <div class="small text-dark mt-2">
+        <strong>Assessment Narrative:</strong> {{ report.explanation.summary }}
+      </div>
+    </div>
+
+    <!-- 1. Transaction Overview -->
+    <div class="mb-4">
+      <h6 class="fw-bold text-dark text-uppercase small border-bottom pb-2">1. Transaction Parameters</h6>
+      <div class="row g-2 small">
+        <div class="col-6 col-md-3 text-muted">Invoice Date:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ report.invoice.invoice_date }}</div>
+        <div class="col-6 col-md-3 text-muted">HSN Code:</div>
+        <div class="col-6 col-md-3 fw-semibold"><code>{{ report.invoice.hsn_code }}</code></div>
+
+        <div class="col-6 col-md-3 text-muted">Supplier ID:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ report.invoice.supplier_id }}</div>
+        <div class="col-6 col-md-3 text-muted">Supplier GSTIN:</div>
+        <div class="col-6 col-md-3 fw-semibold"><code>{{ report.invoice.supplier_gstin }}</code></div>
+
+        <div class="col-6 col-md-3 text-muted">Buyer ID:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ report.invoice.buyer_id }}</div>
+        <div class="col-6 col-md-3 text-muted">Buyer GSTIN:</div>
+        <div class="col-6 col-md-3 fw-semibold"><code>{{ report.invoice.buyer_gstin }}</code></div>
+
+        <div class="col-6 col-md-3 text-muted">Product Category:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ report.invoice.product_category }}</div>
+        <div class="col-6 col-md-3 text-muted">Payment Mode:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ report.invoice.payment_method }}</div>
+
+        <div class="col-6 col-md-3 text-muted">Quantity:</div>
+        <div class="col-6 col-md-3 fw-semibold">{{ "{:,.1f}".format(report.invoice.quantity) }}</div>
+        <div class="col-6 col-md-3 text-muted">Unit Price:</div>
+        <div class="col-6 col-md-3 fw-semibold">₹{{ "{:,.2f}".format(report.invoice.unit_price) }}</div>
+
+        <div class="col-6 col-md-3 text-muted">Taxable Value:</div>
+        <div class="col-6 col-md-3 fw-semibold">₹{{ "{:,.2f}".format(report.invoice.taxable_value) }}</div>
+        <div class="col-6 col-md-3 text-muted">Total Tax:</div>
+        <div class="col-6 col-md-3 fw-semibold">₹{{ "{:,.2f}".format(report.invoice.total_tax) }} ({{ report.invoice.gst_rate }}%)</div>
+
+        <div class="col-6 col-md-3 text-muted">Grand Total:</div>
+        <div class="col-6 col-md-3 fw-bold text-primary">₹{{ "{:,.2f}".format(report.invoice.total_amount) }}</div>
+      </div>
+    </div>
+
+    <!-- 2. Financial arithmetic evidence -->
+    <div class="mb-4">
+      <h6 class="fw-bold text-dark text-uppercase small border-bottom pb-2">2. Financial Arithmetic &amp; Screening Evidence</h6>
+      <p class="small text-muted">No category-specific historical price/quantity benchmark is available. Arithmetic agreement is not a legal compliance determination.</p>
+      <table class="table table-sm table-bordered small align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Evaluated Feature</th>
+            <th>Actual Value</th>
+            <th>Expected / Reference</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for e in report.explanation.evidence %}
+          <tr>
+            <td class="fw-semibold">{{ e.feature }}</td>
+            <td class="fw-bold">{{ e.actual }}</td>
+            <td>{{ e.benchmark }}</td>
+            <td>
+              <span class="badge bg-{{ e.badge_class }} py-1 px-2">{{ e.status_label }}</span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 3. Model Consensus -->
+    <div class="mb-4">
+      <h6 class="fw-bold text-dark text-uppercase small border-bottom pb-2">3. Unsupervised Model Consensus</h6>
+      <div class="row g-2 small">
+        {% for m in report.explanation.models %}
+        <div class="col-md-4">
+          <div class="p-2 border rounded bg-light">
+            <div class="d-flex justify-content-between mb-1">
+              <strong class="text-dark">{{ m.name }}</strong>
+              <span class="badge bg-{{ m.badge_class }}">{% if m.flagged %}FLAGGED{% else %}NORMAL{% endif %}</span>
+            </div>
+            <div class="text-muted" style="font-size:0.75rem;">Weight: {{ m.weight }} | Raw model output: {{ m.raw_score }} | Contribution: {% if m.contribution is not none %}{{ "%.2f"|format(m.contribution) }} points{% else %}unavailable{% endif %}</div>
+            <div class="text-secondary mt-1" style="font-size:0.75rem;">{{ m.assessment }}</div>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- 4. MSME Compliance Actions -->
+    <div class="mb-4">
+      <h6 class="fw-bold text-dark text-uppercase small border-bottom pb-2">4. Suggested Verification Steps</h6>
+      <div class="alert alert-light border small py-2 mb-2">
+        <strong>Suggested action:</strong> {{ report.recommendations.workflow_label }} &mdash; {{ report.recommendations.risk_impact }}
+      </div>
+      <ol class="small text-secondary mb-0 ps-3">
+        {% for act in report.recommendations.actions %}
+        <li class="mb-2">
+          <strong>[{{ act.priority }}] {{ act.action }}:</strong> {{ act.detail }}<br>
+          <span class="text-muted">Why: {{ act.why_recommended }}</span><br>
+          <span class="text-muted"><i class="bi bi-file-earmark-check me-1"></i>Required Proof: <code>{{ act.doc_required }}</code></span>
+        </li>
+        {% endfor %}
+      </ol>
+    </div>
+
+    <!-- Sign-off & Disclaimer -->
+    <div class="border-top pt-3 mt-4">
+      <div class="row align-items-end g-3 small">
+        <div class="col-7 text-muted" style="font-size:0.72rem; line-height: 1.3;">
+          <strong>Statutory Notice:</strong> This report is generated by GSTGuard AI using unsupervised machine learning and statistical heuristics.
+          Classification as anomalous represents statistical variance and does not constitute a legal finding of fraud.
+          Human review and document verification are required prior to any statutory action or ITC reversal.
+        </div>
+        <div class="col-5 text-end">
+          <div class="border-bottom pb-4 mb-1 text-muted" style="height: 40px;"></div>
+          <div class="small fw-semibold text-dark">Authorized Compliance Officer Sign-off</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>

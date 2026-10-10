@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+
+{% block title %}Verification Copilot &bull; GSTGuard AI{% endblock %}
+
+{% block extra_css %}
+<style>
+  .copilot-container {
+    min-height: 600px;
+    display: flex;
+    flex-direction: column;
+    border-radius: 16px;
+    background: #ffffff;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .chip-prompt {
+    font-size: 0.78rem;
+    font-weight: 600;
+    border-radius: 50px;
+    padding: 5px 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    transition: all 0.2s ease;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .chip-prompt:hover {
+    background: #e0e7ff;
+    border-color: #c7d2fe;
+    color: var(--primary);
+    transform: translateY(-1px);
+  }
+  .chat-msg-user {
+    background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+    color: #ffffff;
+    border-radius: 16px 16px 4px 16px;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  }
+  .chat-msg-bot {
+    background: #ffffff;
+    color: var(--text);
+    border-radius: 16px 16px 16px 4px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set active_page = 'copilot' %}
+
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.02em;">
+        Invoice Verification Copilot
+      </h2>
+      <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+        <i class="bi bi-stars me-1 text-warning"></i>Data-Grounded Intelligence
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Invoice screening explanations, arithmetic checks, and general GST verification guidance; not a legal or ITC eligibility determination
+    </p>
+  </div>
+  {% if invoice %}
+  <div class="d-flex align-items-center gap-2">
+    <div class="badge bg-white text-dark border p-2 rounded-pill shadow-sm small">
+      Auditing: <strong class="text-primary font-monospace">{{ invoice.invoice_no }}</strong> &bull; Risk: <strong>{{ invoice.risk_score }}/100</strong>
+    </div>
+    <a href="/invoice/{{ invoice.invoice_no }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3">
+      <i class="bi bi-arrow-left me-1"></i>View Invoice
+    </a>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Copilot Workspace Container -->
+<div class="copilot-container">
+  <!-- Suggestion Chips Bar -->
+  <div class="card-header bg-white py-2 px-3 border-bottom d-flex align-items-center gap-2 flex-wrap">
+    <span class="small fw-bold text-secondary me-1"><i class="bi bi-lightbulb-fill text-warning me-1"></i>Suggested Prompts:</span>
+    {% if invoice %}
+      <button class="chip-prompt" data-prompt="Why was this invoice flagged?">
+        Why was this flagged?
+      </button>
+      <button class="chip-prompt" data-prompt="What models detected this anomaly?">
+        Detector results
+      </button>
+      <button class="chip-prompt" data-prompt="What is the tax discrepancy?">
+        Tax calculation check
+      </button>
+      <button class="chip-prompt" data-prompt="Is it safe to claim ITC on this invoice?">
+        Can I claim ITC?
+      </button>
+      <button class="chip-prompt" data-prompt="What actions are recommended?">
+        Action checklist
+      </button>
+    {% else %}
+      <button class="chip-prompt" data-prompt="Explain GSTR-2B compliance rules">
+        Explain GSTR-2B rules
+      </button>
+      <button class="chip-prompt" data-prompt="What is the Section 16(2) 180-day rule?">
+        180-day ITC rule
+      </button>
+      <button class="chip-prompt" data-prompt="How do the ensemble weights work?">
+        Ensemble ML weights
+      </button>
+      <button class="chip-prompt" data-prompt="What are the key risk categories?">
+        Risk thresholds
+      </button>
+    {% endif %}
+  </div>
+
+  <!-- Messages Scroll Area -->
+  <div class="p-4 flex-grow-1 overflow-auto" id="chat-messages" style="max-height: 480px; background-color: #f8faff;">
+    <!-- Welcome message -->
+    <div class="d-flex gap-3 mb-3">
+      <div class="stat-icon icon-primary flex-shrink-0" style="width: 36px; height: 36px; font-size: 1.1rem;">
+        <i class="bi bi-shield-check"></i>
+      </div>
+      <div class="chat-msg-bot p-3" style="max-width: 85%;">
+        <div class="fw-bold text-dark mb-1 small d-flex align-items-center gap-1">
+          <i class="bi bi-robot text-primary"></i>
+          <span>GSTGuard Copilot</span>
+        </div>
+        <div class="text-secondary small lh-base">
+          {% if invoice %}
+            Hello! I am ready to analyze <strong>Invoice {{ invoice.invoice_no }}</strong>.
+            This transaction is currently classified as <span class="badge {% if invoice.risk_score >= 70 %}bg-danger{% elif invoice.risk_score >= 40 %}bg-warning text-dark{% else %}bg-success{% endif %} rounded-pill">{{ invoice.risk_level }}</span>
+            (Risk Score: <strong>{{ invoice.risk_score }}/100</strong>, Anomaly Pattern: <em>{{ invoice.anomaly_type }}</em>).
+            <br/><br/>
+            Click any suggestion chip above or type any compliance question below regarding statutory rules, model consensus, or tax variance.
+          {% else %}
+            Hello! I am your <strong>GSTGuard Compliance Copilot</strong>.
+            I can answer questions regarding statutory GST regulations (GSTR-2B, Section 16(2), e-Way bill rules),
+            ML model consensus, and unsupervised risk scoring methodology.
+            <br/><br/>
+            To analyze a specific invoice, select it from the <a href="/invoices" class="fw-semibold">Invoices Ledger</a> or the <a href="/review-queue" class="fw-semibold">Priority Review Queue</a>.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Input Area -->
+  <div class="p-3 bg-white border-top">
+    <form id="copilot-form" class="d-flex gap-2 align-items-center">
+      <input
+        type="hidden"
+        id="copilot-invoice-no"
+        value="{{ invoice.invoice_no if invoice else '' }}"
+      />
+      <input
+        type="text"
+        id="copilot-input"
+        class="form-control rounded-pill px-4"
+        placeholder="{% if invoice %}Ask anything about invoice {{ invoice.invoice_no }}...{% else %}Ask a GST compliance or anomaly detection question...{% endif %}"
+        autocomplete="off"
+        required
+      />
+      <button type="submit" id="copilot-send-btn" class="btn btn-primary rounded-pill px-4">
+        <span>Send</span>
+        <i class="bi bi-arrow-right-short fs-5 ms-1"></i>
+      </button>
+    </form>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener("DOMContentLoaded", function () {
+  var chatMessages = document.getElementById("chat-messages");
+  var copilotForm = document.getElementById("copilot-form");
+  var copilotInput = document.getElementById("copilot-input");
+  var sendBtn = document.getElementById("copilot-send-btn");
+  var invoiceNo = document.getElementById("copilot-invoice-no").value;
+
+  function scrollToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+  }
+
+  function appendUserMessage(text) {
+    var div = document.createElement("div");
+    div.className = "d-flex gap-3 mb-3 justify-content-end";
+    div.innerHTML = `
+      <div class="chat-msg-user p-3" style="max-width: 80%;">
+        <div class="small">${escapeHtml(text)}</div>
+      </div>
+      <div class="stat-icon icon-primary flex-shrink-0" style="width: 36px; height: 36px; font-size: 1.1rem; background: #e0e7ff; color: #4f46e5;">
+        <i class="bi bi-person-fill"></i>
+      </div>
+    `;
+    chatMessages.appendChild(div);
+    scrollToBottom();
+  }
+
+  function appendAssistantMessage(htmlContent, confidence) {
+    var div = document.createElement("div");
+    div.className = "d-flex gap-3 mb-3";
+    div.innerHTML = `
+      <div class="stat-icon icon-primary flex-shrink-0" style="width: 36px; height: 36px; font-size: 1.1rem;">
+        <i class="bi bi-shield-check"></i>
+      </div>
+      <div class="chat-msg-bot p-3" style="max-width: 85%;">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <span class="fw-bold text-dark small d-flex align-items-center gap-1">
+            <i class="bi bi-robot text-primary"></i> GSTGuard Copilot
+          </span>
+          ${confidence ? `<span class="badge bg-light text-secondary border rounded-pill small">${confidence}</span>` : ''}
+        </div>
+        <div class="text-dark small lh-base">${formatMarkdown(htmlContent)}</div>
+      </div>
+    `;
+    chatMessages.appendChild(div);
+    scrollToBottom();
+  }
+
+  function appendLoading() {
+    var div = document.createElement("div");
+    div.id = "typing-loader";
+    div.className = "d-flex gap-3 mb-3";
+    div.innerHTML = `
+      <div class="stat-icon icon-primary flex-shrink-0" style="width: 36px; height: 36px; font-size: 1.1rem;">
+        <i class="bi bi-shield-check"></i>
+      </div>
+      <div class="chat-msg-bot p-3">
+        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+        <span class="text-muted small ms-2">Evaluating statutory signals...</span>
+      </div>
+    `;
+    chatMessages.appendChild(div);
+    scrollToBottom();
+  }
+
+  function removeLoading() {
+    var loader = document.getElementById("typing-loader");
+    if (loader) loader.remove();
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  function formatMarkdown(text) {
+    if (!text) return "";
+    var html = escapeHtml(text)
+      .replace(/^### (.*$)/gim, '<h6 class="fw-bold text-primary mt-2 mb-1">$1</h6>')
+      .replace(/^## (.*$)/gim, '<h5 class="fw-bold mt-2 mb-1">$1</h5>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`(.*?)`/g, '<code class="bg-light text-dark px-1 py-0.5 rounded border">$1</code>')
+      .replace(/^- (.*$)/gim, '<div class="d-flex align-items-start gap-2 mb-1"><i class="bi bi-check2 text-primary mt-1"></i><div>$1</div></div>')
+      .replace(/\n\n/g, '<div class="my-2"></div>')
+      .replace(/\n/g, '<br/>');
+    return html;
+  }
+
+  function sendQuery(promptText) {
+    if (!promptText) return;
+    appendUserMessage(promptText);
+    appendLoading();
+    sendBtn.disabled = true;
+
+    fetch("/api/copilot/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: promptText,
+        invoice_no: invoiceNo || null
+      })
+    })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      removeLoading();
+      sendBtn.disabled = false;
+      if (data.status === "success" && data.data) {
+        appendAssistantMessage(data.data.answer, data.data.confidence);
+      } else {
+        appendAssistantMessage("I encountered an issue processing your query: " + (data.message || "Unknown error"), null);
+      }
+    })
+    .catch(function (err) {
+      removeLoading();
+      sendBtn.disabled = false;
+      appendAssistantMessage("Network error: " + err, null);
+    });
+  }
+
+  copilotForm.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var val = copilotInput.value.trim();
+    if (!val) return;
+    copilotInput.value = "";
+    sendQuery(val);
+  });
+
+  document.querySelectorAll(".chip-prompt").forEach(function (btn) {
+    btn.addEventListener("click", function () {
+      var prompt = this.getAttribute("data-prompt");
+      sendQuery(prompt);
+    });
+  });
+});
+</script>
+{% endblock %}

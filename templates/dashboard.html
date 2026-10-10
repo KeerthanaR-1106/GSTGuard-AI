@@ -1,0 +1,600 @@
+{% set active_page = 'dashboard' %}
+{% extends "base.html" %}
+
+{% block title %}Executive Intelligence Dashboard &bull; GSTGuard AI{% endblock %}
+
+{% block extra_css %}
+<style>
+  .chart-card {
+    border-radius: 16px;
+    border: 1px solid var(--border);
+    background: #ffffff;
+    box-shadow: var(--shadow-sm);
+    transition: box-shadow 0.2s;
+  }
+  .chart-card:hover {
+    box-shadow: var(--shadow-md);
+  }
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.02em;">
+        Executive Risk Intelligence
+      </h2>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+        Multi-Model Consensus
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Batch-relative statistical screening of invoice records; findings require human verification
+    </p>
+  </div>
+  <div class="d-flex align-items-center gap-2">
+    <div class="d-inline-flex align-items-center gap-2 bg-white px-3 py-2 rounded-pill border shadow-sm small text-secondary">
+      <span class="live-dot"></span>
+      <span class="fw-semibold text-dark">Live Anomaly Engine</span>
+      <span class="text-muted">&bull; Isolation Forest + LOF + Z-Score</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===== ROW 1: Primary KPI Stat Cards ===== -->
+<div class="row g-3 mb-3">
+
+  <!-- Total Invoices -->
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="stat-card h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="stat-icon icon-primary">
+          <i class="bi bi-receipt-cutoff"></i>
+        </div>
+        <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+          Active Ledger
+        </span>
+      </div>
+      <div class="stat-value text-primary">{{ "{:,}".format(summary.total_invoices) }}</div>
+      <div class="stat-label">Total Invoices Evaluated</div>
+      <div class="stat-delta delta-neu">
+        <i class="bi bi-database me-1"></i>100% Preprocessed
+      </div>
+    </div>
+  </div>
+
+  <!-- Suspicious Invoices -->
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="stat-card h-100" style="border-top: 3px solid var(--danger);">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="stat-icon icon-danger">
+          <i class="bi bi-exclamation-octagon"></i>
+        </div>
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-1 small">
+          {% if summary.total_invoices > 0 %}
+            {{ "%.1f"|format(summary.suspicious_invoices / summary.total_invoices * 100) }}% Rate
+          {% else %}
+            0.0%
+          {% endif %}
+        </span>
+      </div>
+      <div class="stat-value text-danger">{{ "{:,}".format(summary.suspicious_invoices) }}</div>
+      <div class="stat-label">Suspicious / Flagged Invoices</div>
+      <div class="stat-delta delta-down">
+        <i class="bi bi-shield-slash me-1"></i>Requires Verification
+      </div>
+    </div>
+  </div>
+
+  <!-- High Risk -->
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="stat-card h-100" style="border-top: 3px solid #dc2626;">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="stat-icon icon-danger" style="background: rgba(220, 38, 38, 0.15); color: #dc2626;">
+          <i class="bi bi-shield-fill-exclamation"></i>
+        </div>
+        <span class="risk-badge risk-high">
+          Priority Audit
+        </span>
+      </div>
+      <div class="stat-value text-danger">{{ "{:,}".format(summary.high_risk) }}</div>
+      <div class="stat-label">High Risk Invoices (&ge; 70 Score)</div>
+      <div class="stat-delta delta-down">
+        <i class="bi bi-arrow-up-right me-1"></i>Priority for Review
+      </div>
+    </div>
+  </div>
+
+  <!-- Avg Risk Score -->
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="stat-card h-100" style="border-top: 3px solid var(--warning);">
+      <div class="d-flex justify-content-between align-items-start">
+        <div class="stat-icon icon-warning">
+          <i class="bi bi-activity"></i>
+        </div>
+        <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-1 small">
+          Composite Index
+        </span>
+      </div>
+      <div class="stat-value text-warning-emphasis">{{ "%.1f"|format(summary.avg_risk_score) }}<span class="fs-6 text-muted fw-normal">/100</span></div>
+      <div class="stat-label">Average Ledger Risk Score</div>
+      <div class="stat-delta delta-neu">
+        <i class="bi bi-graph-up me-1"></i>Weighted Anomaly Index
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== ROW 2: Secondary Risk Tiers ===== -->
+<div class="row g-3 mb-4">
+
+  <!-- Low Risk -->
+  <div class="col-12 col-md-4">
+    <div class="card h-100 p-3 border-0 shadow-sm" style="background: #f0fdf4; border-left: 4px solid var(--success) !important;">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="stat-icon icon-success mb-0" style="width: 44px; height: 44px; font-size: 1.25rem;">
+            <i class="bi bi-shield-check"></i>
+          </div>
+          <div>
+            <div class="text-uppercase fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.05em;">Low Risk</div>
+            <h4 class="fw-bold mb-0 text-success">{{ summary.low_risk }}</h4>
+          </div>
+        </div>
+        <span class="risk-badge risk-low">Score 0&ndash;39</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Medium Risk -->
+  <div class="col-12 col-md-4">
+    <div class="card h-100 p-3 border-0 shadow-sm" style="background: #fffbeb; border-left: 4px solid var(--warning) !important;">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="stat-icon icon-warning mb-0" style="width: 44px; height: 44px; font-size: 1.25rem;">
+            <i class="bi bi-shield-exclamation"></i>
+          </div>
+          <div>
+            <div class="text-uppercase fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.05em;">Medium Risk</div>
+            <h4 class="fw-bold mb-0 text-warning-emphasis">{{ summary.medium_risk }}</h4>
+          </div>
+        </div>
+        <span class="risk-badge risk-medium">Score 40&ndash;69</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Normal Invoices -->
+  <div class="col-12 col-md-4">
+    <div class="card h-100 p-3 border-0 shadow-sm" style="background: #f0fdfa; border-left: 4px solid #0d9488 !important;">
+      <div class="d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-3">
+          <div class="stat-icon icon-success mb-0" style="width: 44px; height: 44px; font-size: 1.25rem;">
+            <i class="bi bi-shield-check"></i>
+          </div>
+          <div>
+            <div class="text-uppercase fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.05em;">Normal Invoices</div>
+            <h4 class="fw-bold mb-0" style="color: #0d9488;">{{ summary.normal_invoices }}</h4>
+          </div>
+        </div>
+        <span class="badge rounded-pill text-bg-light border small text-muted">
+          {% if summary.total_invoices > 0 %}
+            {{ "%.1f"|format(summary.normal_invoices / summary.total_invoices * 100) }}% Clean
+          {% else %}
+            0.0%
+          {% endif %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== ROW 3: Interactive Charts ===== -->
+<div class="row g-4 mb-4">
+
+  <!-- Doughnut: Risk Distribution -->
+  <div class="col-12 col-lg-5">
+    <div class="chart-card h-100 d-flex flex-column">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <div>
+          <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-pie-chart-fill text-primary me-2"></i>Risk Distribution
+          </h5>
+          <p class="text-muted small mb-0">Invoice count partitioned by risk severity</p>
+        </div>
+        <span class="badge bg-light text-dark border">3 Tiers</span>
+      </div>
+      <div class="card-body flex-grow-1 d-flex flex-column align-items-center justify-content-center p-4">
+        <!-- Spinner -->
+        <div id="doughnut-spinner" class="text-center py-4">
+          <div class="spinner-border text-primary" role="status" style="width:2.5rem;height:2.5rem;">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="text-muted mt-2 small">Computing distribution...</p>
+        </div>
+        <!-- Canvas wrapper -->
+        <div id="doughnut-chart-wrapper" class="w-100" style="display:none; max-height:280px;">
+          <canvas id="riskDoughnutChart" height="260"></canvas>
+        </div>
+      </div>
+      <!-- Legend -->
+      <div class="card-footer bg-light border-top py-2 px-3">
+        <div class="d-flex justify-content-around flex-wrap gap-2 text-center small">
+          <div>
+            <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#10b981;"></span>
+            <span class="text-muted">Low: </span><strong>{{ summary.low_risk }}</strong>
+          </div>
+          <div>
+            <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#f59e0b;"></span>
+            <span class="text-muted">Medium: </span><strong>{{ summary.medium_risk }}</strong>
+          </div>
+          <div>
+            <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#ef4444;"></span>
+            <span class="text-muted">High: </span><strong>{{ summary.high_risk }}</strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bar: Anomaly Pattern Breakdown -->
+  <div class="col-12 col-lg-7">
+    <div class="chart-card h-100 d-flex flex-column">
+      <div class="card-header bg-white border-bottom py-3 d-flex justify-content-between align-items-center">
+        <div>
+          <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-bar-chart-fill text-danger me-2"></i>Anomaly Type Breakdown
+          </h5>
+          <p class="text-muted small mb-0">Frequency of individual anomaly patterns flagged by ML models</p>
+        </div>
+        <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+          {{ summary.anomaly_types|length }} Patterns Detected
+        </span>
+      </div>
+      <div class="card-body flex-grow-1 d-flex flex-column align-items-center justify-content-center p-4">
+        <!-- Spinner -->
+        <div id="bar-spinner" class="text-center py-4">
+          <div class="spinner-border text-danger" role="status" style="width:2.5rem;height:2.5rem;">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <p class="text-muted mt-2 small">Rendering anomaly breakdown...</p>
+        </div>
+        <!-- Canvas wrapper -->
+        <div id="bar-chart-wrapper" class="w-100" style="display:none; min-height: 260px;">
+          <canvas id="anomalyBarChart" height="260"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== ROW 4: Priority Review Queue & Risky Suppliers ===== -->
+<div class="row g-4 mb-4">
+
+  <!-- Priority Review Queue -->
+  <div class="col-12 col-xl-7">
+    <div class="chart-card h-100 border-0">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <div>
+          <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-list-check text-danger me-2"></i>Priority Review Queue
+          </h5>
+          <p class="text-muted small mb-0">Review priority reflects the screening index, detector flags, and taxable exposure</p>
+        </div>
+        <a href="/review-queue" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+          Full Queue <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+            <tr>
+              <th>Invoice No</th>
+              <th>Priority Score</th>
+              <th>Taxable Value</th>
+              <th>Anomaly Pattern</th>
+              <th>Detector Flags</th>
+              <th class="text-end">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for item in review_queue %}
+            <tr>
+              <td>
+                <a href="/invoice/{{ item.invoice_no }}" class="fw-bold text-primary font-monospace text-decoration-none">
+                  {{ item.invoice_no }}
+                </a>
+                <div class="text-muted" style="font-size: 0.7rem;">{{ item.invoice_date }}</div>
+              </td>
+              <td>
+                <span class="score-pill {% if item.priority_score >= 80 %}score-high{% elif item.priority_score >= 60 %}score-medium{% else %}score-low{% endif %}">
+                  {{ item.priority_score }}
+                </span>
+              </td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.0f}".format(item.taxable_value) }}</td>
+              <td>
+                <span class="badge bg-light text-dark border">{{ item.anomaly_type }}</span>
+              </td>
+              <td>
+                <span class="badge {% if item.consensus_count >= 2 %}bg-danger-subtle text-danger border border-danger-subtle{% else %}bg-secondary-subtle text-secondary{% endif %}">
+                  {{ item.consensus_count }}/3 Models
+                </span>
+              </td>
+              <td class="text-end">
+                <a href="/invoice/{{ item.invoice_no }}" class="btn btn-sm btn-outline-danger py-1 px-3 rounded-pill" style="font-size: 0.75rem;">
+                  Audit &rarr;
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center py-4 text-muted">
+                <i class="bi bi-check-circle-fill text-success fs-4 d-block mb-1"></i>
+                No pending items in the review queue.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Risky Suppliers -->
+  <div class="col-12 col-xl-5">
+    <div class="chart-card h-100 border-0">
+      <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
+        <div>
+          <h5 class="fw-bold mb-0 text-dark">
+            <i class="bi bi-building-exclamation text-warning me-2"></i>Top Risky Suppliers
+          </h5>
+          <p class="text-muted small mb-0">Vendors with high anomaly concentration</p>
+        </div>
+        <a href="/suppliers" class="btn btn-sm btn-outline-primary rounded-pill px-3">
+          All Vendors <i class="bi bi-arrow-right ms-1"></i>
+        </a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+            <tr>
+              <th>Supplier</th>
+              <th>Turnover</th>
+              <th>Risk Score</th>
+              <th class="text-end">Scorecard</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in top_suppliers %}
+            <tr>
+              <td>
+                <a href="/suppliers/{{ s.supplier_id }}" class="fw-bold text-dark text-decoration-none">
+                  {{ s.supplier_id }}
+                </a>
+                <div class="text-muted font-monospace" style="font-size: 0.7rem;">{{ s.supplier_gstin }}</div>
+              </td>
+              <td class="fw-semibold text-dark">₹{{ "{:,.0f}".format(s.total_taxable_value) }}</td>
+              <td>
+                <span class="score-pill {% if s.supplier_risk_score >= 70 %}score-high{% elif s.supplier_risk_score >= 40 %}score-medium{% else %}score-low{% endif %}">
+                  {{ s.supplier_risk_score }}
+                </span>
+              </td>
+              <td class="text-end">
+                <a href="/suppliers/{{ s.supplier_id }}" class="btn btn-sm btn-outline-secondary py-1 px-2 rounded-pill" style="font-size: 0.75rem;">
+                  View &rarr;
+                </a>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center py-4 text-muted">
+                No risky suppliers identified.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ===== ROW 5: Explanatory Compliance Footer ===== -->
+<div class="card border-0 bg-white shadow-sm p-4 rounded-4 mb-4">
+  <div class="d-flex align-items-start gap-3">
+    <div class="stat-icon icon-primary flex-shrink-0" style="width: 44px; height: 44px;">
+      <i class="bi bi-info-circle-fill fs-5"></i>
+    </div>
+    <div class="flex-grow-1">
+      <h6 class="fw-bold text-dark mb-1">How the Anomaly Index Is Calculated</h6>
+      <p class="text-secondary small mb-2 lh-base">
+        GSTGuard AI uses an unsupervised ensemble of <strong>Isolation Forest</strong> (tree partition isolation), <strong>Local Outlier Factor</strong> (local density anomalies), and <strong>Z-Score Analysis</strong> (statistical variance across 43 engineered features).
+        Batch-relative detector scores are normalized and combined into a <strong>screening index (0&ndash;100)</strong>. This is not a fraud probability, legal finding, or cross-batch comparable score.
+      </p>
+      <div class="d-flex gap-4 flex-wrap text-muted small">
+        <div><span class="badge bg-success me-1">0&ndash;39 Low Risk</span> Clean, compliant transactions</div>
+        <div><span class="badge bg-warning text-dark me-1">40&ndash;69 Medium Risk</span> Recommended officer verification</div>
+        <div><span class="badge bg-danger me-1">&ge; 70 High Anomaly Risk</span> Prioritize human review; verify source documents before any compliance decision</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Embed summary data as JSON for JavaScript -->
+<script id="summary-data" type="application/json">{{ summary | tojson }}</script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  "use strict";
+
+  var rawJson = document.getElementById("summary-data").textContent;
+  var summary = JSON.parse(rawJson);
+
+  Chart.defaults.font.family = "'Inter', system-ui, sans-serif";
+  Chart.defaults.color = "#64748b";
+
+  function revealChart(spinnerId, wrapperId) {
+    var spinner = document.getElementById(spinnerId);
+    var wrapper = document.getElementById(wrapperId);
+    if (spinner) spinner.style.display = "none";
+    if (wrapper) wrapper.style.display = "block";
+  }
+
+  /* 1. Doughnut Chart */
+  function initDoughnutChart() {
+    var dist = summary.risk_distribution || {};
+    var labels = ["Low Risk", "Medium Risk", "High Risk"];
+    var values = [
+      dist["Low Risk"] || 0,
+      dist["Medium Risk"] || 0,
+      dist["High Risk"] || 0
+    ];
+
+    var ctx = document.getElementById("riskDoughnutChart").getContext("2d");
+    new Chart(ctx, {
+      type: "doughnut",
+      data: {
+        labels: labels,
+        datasets: [{
+          data: values,
+          backgroundColor: ["#10b981", "#f59e0b", "#ef4444"],
+          borderColor: "#ffffff",
+          borderWidth: 3,
+          hoverOffset: 8
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: "68%",
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              label: function (ctx) {
+                var total = ctx.dataset.data.reduce(function (a, b) { return a + b; }, 0);
+                var val = ctx.parsed;
+                var pct = total > 0 ? ((val / total) * 100).toFixed(1) : "0.0";
+                return " " + ctx.label + ": " + val + " (" + pct + "%)";
+              }
+            }
+          }
+        },
+        animation: {
+          duration: 800,
+          onComplete: function () {
+            revealChart("doughnut-spinner", "doughnut-chart-wrapper");
+          }
+        }
+      }
+    });
+  }
+
+  /* 2. Horizontal Anomaly Type Bar Chart */
+  function initBarChart() {
+    var anomalyTypes = summary.anomaly_types || {};
+    var labels = Object.keys(anomalyTypes);
+    var values = Object.values(anomalyTypes);
+
+    if (labels.length === 0) {
+      labels = ["No Anomalies Recorded"];
+      values = [0];
+    }
+
+    var palette = [
+      "#6366f1", "#ef4444", "#f59e0b", "#10b981",
+      "#3b82f6", "#ec4899", "#8b5cf6", "#f97316"
+    ];
+    var backgroundColors = labels.map(function (_, i) {
+      return palette[i % palette.length];
+    });
+
+    var ctx = document.getElementById("anomalyBarChart").getContext("2d");
+    new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [{
+          label: "Invoices Flagged",
+          data: values,
+          backgroundColor: backgroundColors,
+          borderRadius: 6,
+          barPercentage: 0.65
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: true },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            enabled: true,
+            padding: 10,
+            cornerRadius: 8,
+            callbacks: {
+              title: function (context) {
+                return context[0].label;
+              },
+              label: function (context) {
+                return " Count: " + Number(context.raw).toLocaleString();
+              }
+            }
+          }
+        },
+        scales: {
+          x: {
+            grid: { display: false },
+            ticks: {
+              font: { size: 10 },
+              maxRotation: 25,
+              minRotation: 0
+            }
+          },
+          y: {
+            beginAtZero: true,
+            grid: { color: "rgba(226, 232, 240, 0.6)" },
+            ticks: { precision: 0, font: { size: 10 } }
+          }
+        },
+        animation: {
+          duration: 800,
+          onComplete: function () {
+            revealChart("bar-spinner", "bar-chart-wrapper");
+          }
+        }
+      }
+    });
+  }
+
+  document.addEventListener("DOMContentLoaded", function () {
+    initDoughnutChart();
+    initBarChart();
+  });
+})();
+</script>
+{% endblock %}

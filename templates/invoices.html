@@ -1,0 +1,255 @@
+{% extends "base.html" %}
+{% set active_page = 'invoices' %}
+
+{% block title %}All Invoices Ledger &bull; GSTGuard AI{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h2 class="fw-bold mb-0 text-dark" style="letter-spacing: -0.02em;">
+        All Invoices Ledger
+      </h2>
+      <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-1 small">
+        {{ pagination.total }} Invoices Indexed
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Comprehensive transaction records with automated ML anomaly signals and composite risk scoring
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="/suspicious" class="btn btn-sm btn-outline-danger rounded-pill px-3">
+      <i class="bi bi-exclamation-triangle me-1"></i>View Suspicious Only
+    </a>
+    <a href="/api/export/csv" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+      <i class="bi bi-download me-1"></i>Export CSV
+    </a>
+  </div>
+</div>
+
+<!-- Filter Toolbar Card -->
+<div class="card border-0 shadow-sm rounded-4 mb-4">
+  <div class="card-body p-3">
+    <form method="GET" action="/invoices" class="row g-2 align-items-center">
+
+      <div class="col-12 col-md-5 col-lg-4">
+        <div class="input-icon-wrap">
+          <i class="bi bi-search input-icon text-muted"></i>
+          <input
+            type="text"
+            id="searchInput"
+            name="search"
+            class="form-control form-control-sm rounded-pill"
+            placeholder="Search by Invoice No, GSTIN, Category..."
+            value="{{ search | default('') }}"
+          />
+        </div>
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-3">
+        <select id="riskLevelSelect" name="risk_level" class="form-select form-select-sm rounded-pill">
+          <option value="" {% if not risk_level %}selected{% endif %}>All Risk Severity Tiers</option>
+          <option value="Low Risk" {% if risk_level in ['Low Risk', 'Low'] %}selected{% endif %}>Low Risk (&lt; 40)</option>
+          <option value="Medium Risk" {% if risk_level in ['Medium Risk', 'Medium'] %}selected{% endif %}>Medium Risk (40&ndash;69)</option>
+          <option value="High Risk" {% if risk_level in ['High Risk', 'High'] %}selected{% endif %}>High Risk (&ge; 70)</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-3 col-lg-3">
+        <select id="anomalyTypeSelect" name="anomaly_type" class="form-select form-select-sm rounded-pill">
+          <option value="" {% if not anomaly_type %}selected{% endif %}>All Anomaly Types</option>
+          <option value="Normal" {% if anomaly_type == 'Normal' %}selected{% endif %}>Normal (Compliant)</option>
+          <option value="Statistical Model Outlier" {% if anomaly_type == 'Statistical Model Outlier' %}selected{% endif %}>Statistical Model Outlier</option>
+          <option value="Extreme Invoice Amount" {% if anomaly_type == 'Extreme Invoice Amount' %}selected{% endif %}>Extreme Invoice Amount</option>
+          <option value="Extreme Unit Price" {% if anomaly_type == 'Extreme Unit Price' %}selected{% endif %}>Extreme Unit Price</option>
+          <option value="Unusual Quantity" {% if anomaly_type == 'Unusual Quantity' %}selected{% endif %}>Unusual Quantity</option>
+          <option value="Unusual Discount" {% if anomaly_type == 'Unusual Discount' %}selected{% endif %}>Unusual Discount</option>
+          <option value="Tax Calculation Mismatch" {% if anomaly_type == 'Tax Calculation Mismatch' %}selected{% endif %}>Tax Calculation Mismatch</option>
+          <option value="Incorrect CGST SGST Split" {% if anomaly_type == 'Incorrect CGST SGST Split' %}selected{% endif %}>Incorrect CGST SGST Split</option>
+          <option value="Incorrect IGST" {% if anomaly_type == 'Incorrect IGST' %}selected{% endif %}>Incorrect IGST</option>
+          <option value="Duplicate Transaction" {% if anomaly_type == 'Duplicate Transaction' %}selected{% endif %}>Duplicate Transaction</option>
+          <option value="Future Invoice Date" {% if anomaly_type == 'Future Invoice Date' %}selected{% endif %}>Future Invoice Date</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-auto d-flex gap-2 ms-auto">
+        <button type="submit" class="btn btn-sm btn-primary rounded-pill px-4">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        {% if search or risk_level or anomaly_type %}
+        <a href="/invoices" class="btn btn-sm btn-outline-secondary rounded-pill px-3">
+          <i class="bi bi-x-circle me-1"></i>Reset
+        </a>
+        {% endif %}
+      </div>
+
+    </form>
+  </div>
+</div>
+
+<!-- Ledger Table Card -->
+<div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
+  <div class="card-header bg-white border-bottom py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div class="fw-bold text-dark d-flex align-items-center gap-2">
+      <i class="bi bi-table text-primary"></i>
+      <span>Transaction Ledger</span>
+    </div>
+    {% if pagination.total > 0 %}
+      {% set start_record = (pagination.page - 1) * pagination.per_page + 1 %}
+      {% set end_record   = [pagination.page * pagination.per_page, pagination.total] | min %}
+      <span class="text-muted small">
+        Showing <strong>{{ start_record }}</strong>&ndash;<strong>{{ end_record }}</strong> of <strong>{{ pagination.total }}</strong> records
+      </span>
+    {% endif %}
+  </div>
+
+  <div class="table-responsive">
+    {% if invoices %}
+      <table class="table table-hover align-middle mb-0 small">
+        <thead class="table-light text-uppercase text-secondary" style="font-size: 0.72rem; letter-spacing: 0.05em;">
+          <tr>
+            <th class="ps-3">Invoice No</th>
+            <th>Date</th>
+            <th>Supplier GSTIN</th>
+            <th>Buyer GSTIN</th>
+            <th>Category</th>
+            <th class="text-end">Taxable Value</th>
+            <th class="text-center">Risk Score</th>
+            <th class="text-center">Severity</th>
+            <th>Anomaly Pattern</th>
+            <th class="text-end pe-3">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          {% set rs = inv.risk_score | float %}
+          <tr style="{% if rs >= 70.0 %}border-left: 3px solid #ef4444;{% elif rs >= 40.0 %}border-left: 3px solid #f59e0b;{% endif %}">
+            <!-- Invoice No -->
+            <td class="ps-3">
+              <a href="/invoice/{{ inv.invoice_no }}" class="fw-bold text-primary font-monospace text-decoration-none">
+                {{ inv.invoice_no }}
+              </a>
+            </td>
+
+            <!-- Date -->
+            <td class="text-nowrap text-secondary">{{ inv.invoice_date }}</td>
+
+            <!-- Supplier GSTIN -->
+            <td>
+              <a href="/suppliers/{{ inv.supplier_id }}" class="text-decoration-none text-dark" title="View Supplier Profile">
+                <span class="font-monospace text-secondary" style="font-size: 0.75rem;">{{ inv.supplier_gstin }}</span>
+              </a>
+            </td>
+
+            <!-- Buyer GSTIN -->
+            <td>
+              <span class="font-monospace text-secondary" style="font-size: 0.75rem;">{{ inv.buyer_gstin }}</span>
+            </td>
+
+            <!-- Category -->
+            <td>
+              <span class="badge bg-light text-dark border">{{ inv.product_category }}</span>
+            </td>
+
+            <!-- Taxable Value -->
+            <td class="text-end fw-semibold text-dark">
+              ₹{{ "{:,.2f}".format(inv.taxable_value | float) }}
+            </td>
+
+            <!-- Risk Score -->
+            <td class="text-center">
+              <span class="score-pill {% if rs >= 70.0 %}score-high{% elif rs >= 40.0 %}score-medium{% else %}score-low{% endif %}">
+                {{ "%.1f" | format(rs) }}
+              </span>
+            </td>
+
+            <!-- Severity Badge -->
+            <td class="text-center">
+              {% if inv.risk_level in ['High Risk', 'High'] %}
+                <span class="risk-badge risk-high">High</span>
+              {% elif inv.risk_level in ['Medium Risk', 'Medium'] %}
+                <span class="risk-badge risk-medium">Medium</span>
+              {% else %}
+                <span class="risk-badge risk-low">Low</span>
+              {% endif %}
+            </td>
+
+            <!-- Anomaly Type -->
+            <td>
+              {% if inv.anomaly_type and inv.anomaly_type != 'Normal' %}
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
+                  <i class="bi bi-exclamation-triangle-fill me-1"></i>{{ inv.anomaly_type }}
+                </span>
+              {% else %}
+                <span class="badge bg-success-subtle text-success">
+                  <i class="bi bi-check-circle me-1"></i>Normal
+                </span>
+              {% endif %}
+            </td>
+
+            <!-- Action -->
+            <td class="text-end pe-3">
+              <a href="/invoice/{{ inv.invoice_no }}" class="btn btn-sm btn-outline-primary py-1 px-3 rounded-pill" style="font-size: 0.75rem;">
+                Audit &rarr;
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <!-- Empty State -->
+      <div class="text-center py-5 px-3">
+        <i class="bi bi-inbox display-4 text-muted d-block mb-3"></i>
+        <h5 class="text-dark fw-bold mb-1">No invoices found</h5>
+        <p class="text-muted small mb-3">
+          Try clearing the filters or searching for a different invoice number or GSTIN.
+        </p>
+        <a href="/invoices" class="btn btn-sm btn-primary rounded-pill px-4">
+          Reset All Filters
+        </a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Pagination Footer -->
+  {% if pagination.pages > 1 %}
+  <div class="card-footer bg-white border-top py-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div class="text-muted small">
+      Page <strong>{{ pagination.page }}</strong> of <strong>{{ pagination.pages }}</strong>
+    </div>
+
+    <nav aria-label="Invoice table navigation">
+      <ul class="pagination pagination-sm mb-0">
+        <!-- Previous -->
+        <li class="page-item {% if pagination.page <= 1 %}disabled{% endif %}">
+          <a class="page-link rounded-pill me-1" href="?page={{ pagination.page - 1 }}&search={{ search|default('') }}&risk_level={{ risk_level|default('') }}&anomaly_type={{ anomaly_type|default('') }}">
+            &laquo; Prev
+          </a>
+        </li>
+
+        <!-- Page numbers -->
+        {% set start_p = [1, pagination.page - 2] | max %}
+        {% set end_p   = [pagination.pages, pagination.page + 2] | min %}
+        {% for p in range(start_p, end_p + 1) %}
+        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+          <a class="page-link rounded-circle mx-1 text-center" style="width: 28px; height: 28px; padding: 0; line-height: 26px;" href="?page={{ p }}&search={{ search|default('') }}&risk_level={{ risk_level|default('') }}&anomaly_type={{ anomaly_type|default('') }}">
+            {{ p }}
+          </a>
+        </li>
+        {% endfor %}
+
+        <!-- Next -->
+        <li class="page-item {% if pagination.page >= pagination.pages %}disabled{% endif %}">
+          <a class="page-link rounded-pill ms-1" href="?page={{ pagination.page + 1 }}&search={{ search|default('') }}&risk_level={{ risk_level|default('') }}&anomaly_type={{ anomaly_type|default('') }}">
+            Next &raquo;
+          </a>
+        </li>
+      </ul>
+    </nav>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
