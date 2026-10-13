@@ -14,11 +14,33 @@ from services.supplier_service import get_top_risky_suppliers
 
 dashboard_bp = Blueprint("dashboard", __name__)
 
+EMPTY_DASHBOARD_SUMMARY = {
+    "total_invoices": 0,
+    "normal_invoices": 0,
+    "suspicious_invoices": 0,
+    "high_risk": 0,
+    "medium_risk": 0,
+    "low_risk": 0,
+    "avg_risk_score": 0.0,
+    "risk_distribution": {
+        "Normal": 0,
+        "Low Risk": 0,
+        "Medium Risk": 0,
+        "High Risk": 0,
+    },
+    "anomaly_types": {},
+}
+
 
 @dashboard_bp.route("/")
 def index():
     """Redirect to dashboard or login page based on session state."""
-    return redirect(url_for("dashboard.dashboard_view"))
+    destination = (
+        "dashboard.dashboard_view"
+        if session.get("logged_in") and session.get("user")
+        else "dashboard.login_view"
+    )
+    return redirect(url_for(destination))
 
 
 @dashboard_bp.route("/login", methods=["GET", "POST"])
@@ -31,6 +53,7 @@ def login_view():
         if username == Config.DEMO_USER and password == Config.DEMO_PASSWORD:
             session["logged_in"] = True
             session["user"] = username
+            session["has_uploaded_csv"] = False
             flash("Successfully logged in as Compliance Officer.", "success")
             return redirect(url_for("dashboard.dashboard_view"))
         else:
@@ -50,6 +73,7 @@ def logout_view():
 @dashboard_bp.route("/dashboard")
 def dashboard_view():
     """Render executive dashboard with real data queried from SQLite."""
+    has_uploaded_csv = session.get("has_uploaded_csv", False)
     summary = get_dashboard_summary()
     top_suppliers = get_top_risky_suppliers(limit=5)
     review_queue = get_review_queue(limit=5)
@@ -57,7 +81,8 @@ def dashboard_view():
         "dashboard.html",
         summary=summary,
         top_suppliers=top_suppliers,
-        review_queue=review_queue
+        review_queue=review_queue,
+        has_uploaded_csv=has_uploaded_csv,
     )
 
 
@@ -77,7 +102,11 @@ def api_dashboard_summary():
       - anomaly_types
     """
     try:
-        data = get_dashboard_summary()
+        data = (
+            get_dashboard_summary()
+            if session.get("has_uploaded_csv", False)
+            else EMPTY_DASHBOARD_SUMMARY
+        )
         return jsonify({
             "status": "success",
             "data": data

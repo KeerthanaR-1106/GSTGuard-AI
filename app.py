@@ -14,7 +14,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, redirect, session, url_for
 from config import Config
 from database.database import init_db
 
@@ -52,6 +52,26 @@ def create_app(config_class=Config):
             "app_title": "GSTGuard AI — Intelligent GST Invoice Risk & MSME Compliance Platform",
             "active_endpoint": request.endpoint or ""
         }
+
+    @app.before_request
+    def require_login():
+        """Require an authenticated session for application pages and APIs."""
+        public_endpoints = {
+            "static",
+            "dashboard.index",
+            "dashboard.login_view",
+            "dashboard.logout_view",
+        }
+        if request.endpoint is None or request.endpoint in public_endpoints:
+            return None
+        if session.get("logged_in") and session.get("user"):
+            return None
+        if request.path.startswith("/api/"):
+            return jsonify({
+                "status": "error",
+                "message": "Authentication is required to access this resource.",
+            }), 401
+        return redirect(url_for("dashboard.login_view"))
 
 
     # ── Error Handlers ───────────────────────────────────────────────────────

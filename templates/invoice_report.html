@@ -104,8 +104,8 @@
         <div>
           <div class="small fw-semibold text-uppercase text-secondary">Target Invoice</div>
           <h4 class="fw-bold mb-0 text-dark">{{ report.invoice.invoice_no }}</h4>
-          <span class="badge {% if report.invoice.risk_score >= 70 %}bg-danger{% elif report.invoice.risk_score >= 40 %}bg-warning text-dark{% else %}bg-success{% endif %} mt-1">
-            {{ report.invoice.risk_level }} · Batch-relative anomaly index: {{ report.invoice.risk_score }}/100
+          <span class="badge {% if report.invoice.risk_level == 'High Risk' %}bg-danger{% elif report.invoice.risk_level == 'Medium Risk' %}bg-warning text-dark{% else %}bg-success{% endif %} mt-1">
+            {{ report.invoice.risk_level }} · Training-baseline anomaly index: {{ report.invoice.risk_score }}/100
           </span>
           <span class="badge bg-light text-dark border ms-1 mt-1">
             Type: {{ report.invoice.anomaly_type }}

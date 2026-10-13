@@ -45,20 +45,35 @@ Provides an interface for invoice-related questions and compliance assistance us
 Helps users examine supplier-related invoice patterns and identify unusual activity that may warrant further investigation.
 
 ### 7. Upload & Analyze
-Supports analysis of invoice datasets through CSV upload and data-processing workflows.
+Analyzes the CSV that the user uploads. The latest successful upload becomes the
+active application dataset, so dashboard statistics, invoice and supplier views,
+review queues, and exports contain only records from that upload. Existing
+training and legacy database records are not included in these results.
 
 ### 8. Reports and Audit Support
 Provides access to analysis results and available reports to support documentation and review.
 
 ## How It Works
 
-1. **Upload:** Provide invoice data in the supported CSV format.
+1. **Upload:** Provide invoice data in the supported CSV format. A successful
+   upload replaces the active analysis dataset shown by the application.
 2. **Validate:** Process the data and prepare the required features.
-3. **Analyze:** Apply Isolation Forest, LOF, and statistical anomaly detection.
+3. **Train and analyze:** Fit Isolation Forest, novelty-mode LOF, the feature
+   scaler, and Z-Score reference statistics using the 20,000-record
+   `data/gst_invoices.csv` training dataset. Apply those fitted detectors to
+   the uploaded rows without fitting on the upload.
 4. **Score:** Combine model signals using the existing ensemble scoring logic.
+   Records with no detected anomaly are labeled **Normal**. Flagged anomalies receive
+   **Low**, **Medium**, or **High** severity from the screening-score thresholds.
 5. **Investigate:** Review flagged invoices, available explanations, and supplier risk indicators.
 6. **Verify:** Use supporting documents and recommended checks to investigate potential irregularities.
 7. **Report:** Access available analysis and reporting functionality.
+
+The training CSV and precomputed training outputs are kept separate from
+application-facing uploaded results. The trained detectors are cached in
+memory per process and retrained if the training CSV changes. Before the first
+upload, invoice analytics are empty; after an upload, every result is scoped to
+that uploaded batch.
 
 ## Technology Stack
 

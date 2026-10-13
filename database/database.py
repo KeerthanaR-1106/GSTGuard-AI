@@ -10,6 +10,7 @@ import sys
 import sqlite3
 from datetime import timezone
 import pandas as pd
+from flask import has_request_context, session as flask_session
 from sqlalchemy import create_engine, func, case, and_, or_, inspect
 from sqlalchemy.orm import sessionmaker, scoped_session
 
@@ -20,7 +21,9 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 # Import ORM models
-from database.models import Base, Invoice, Analysis, Investigation, InvestigationHistory
+from database.models import (
+    Base, Invoice, Analysis, Investigation, InvestigationHistory, UploadBatch
+)
 
 # ── Database Path & Engine Configuration ──────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -48,6 +51,17 @@ def init_db():
     """Create all SQLite database tables according to SQLAlchemy models."""
     print(f"[DB] Initializing database schema at: {DB_PATH}")
     Base.metadata.create_all(bind=engine)
+    invoice_columns = {column["name"] for column in inspect(engine).get_columns("invoices")}
+    if "upload_batch_id" not in invoice_columns:
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "ALTER TABLE invoices ADD COLUMN upload_batch_id VARCHAR(36)"
+            )
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS ix_invoices_upload_batch_id "
+                "ON invoices (upload_batch_id)"
+            )
     analysis_columns = {column["name"] for column in inspect(engine).get_columns("analysis")}
     for column_name in (
         "isolation_contribution", "lof_contribution", "zscore_contribution"
@@ -58,6 +72,26 @@ def init_db():
                     f"ALTER TABLE analysis ADD COLUMN {column_name} FLOAT"
                 )
     print("     Tables 'invoices' and 'analysis' created successfully.")
+
+
+def get_active_upload_batch_id(session):
+    """Return the current upload ID, or None before a CSV has been analyzed."""
+    if has_request_context() and flask_session.get("logged_in") and not flask_session.get("has_uploaded_csv"):
+        return None
+    result = session.query(UploadBatch.id).filter(
+        UploadBatch.is_active.is_(True)
+    ).order_by(UploadBatch.uploaded_at.desc()).first()
+    return result[0] if result else None
+
+
+def _empty_page(page: int, per_page: int):
+    return {
+        "items": [],
+        "total": 0,
+        "page": page,
+        "per_page": per_page,
+        "pages": 0,
+    }
 
 
 def populate_database(invoices_path: str = None, ensemble_path: str = None):
@@ -125,11 +159,34 @@ def get_dashboard_summary():
     """
     session = SessionLocal()
     try:
-        total_invoices = session.query(Invoice).count()
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return {
+                "total_invoices": 0,
+                "normal_invoices": 0,
+                "suspicious_invoices": 0,
+                "high_risk": 0,
+                "medium_risk": 0,
+                "low_risk": 0,
+                "avg_risk_score": 0.0,
+                "risk_distribution": {
+                    "Normal": 0,
+                    "Low Risk": 0,
+                    "Medium Risk": 0,
+                    "High Risk": 0,
+                },
+                "anomaly_types": {},
+            }
+
+        total_invoices = session.query(Invoice).filter(
+            Invoice.upload_batch_id == active_batch_id
+        ).count()
 
         # Risk level counts
         risk_counts = dict(
             session.query(Analysis.risk_level, func.count(Analysis.invoice_no))
+            .join(Invoice, Invoice.invoice_no == Analysis.invoice_no)
+            .filter(Invoice.upload_batch_id == active_batch_id)
             .group_by(Analysis.risk_level)
             .all()
         )
@@ -137,11 +194,15 @@ def get_dashboard_summary():
         low_risk    = risk_counts.get("Low Risk", 0)
         medium_risk = risk_counts.get("Medium Risk", 0)
         high_risk   = risk_counts.get("High Risk", 0)
-        suspicious  = medium_risk + high_risk
-        normal      = low_risk
+        suspicious  = low_risk + medium_risk + high_risk
+        normal      = risk_counts.get("Normal", 0)
 
         # Average risk score
-        avg_score = session.query(func.avg(Analysis.risk_score)).scalar() or 0.0
+        avg_score = session.query(func.avg(Analysis.risk_score)).join(
+            Invoice, Invoice.invoice_no == Analysis.invoice_no
+        ).filter(
+            Invoice.upload_batch_id == active_batch_id
+        ).scalar() or 0.0
 
         # Anomaly type breakdown
         anomaly_pattern = case(
@@ -156,6 +217,8 @@ def get_dashboard_summary():
         )
         type_counts = dict(
             session.query(anomaly_pattern, func.count(Analysis.invoice_no))
+            .join(Invoice, Invoice.invoice_no == Analysis.invoice_no)
+            .filter(Invoice.upload_batch_id == active_batch_id)
             .group_by(anomaly_pattern)
             .order_by(func.count(Analysis.invoice_no).desc())
             .all()
@@ -172,7 +235,8 @@ def get_dashboard_summary():
             "risk_distribution": {
                 "Low Risk": low_risk,
                 "Medium Risk": medium_risk,
-                "High Risk": high_risk
+                "High Risk": high_risk,
+                "Normal": normal,
             },
             "anomaly_types": type_counts
         }
@@ -184,7 +248,11 @@ def get_invoices(page: int = 1, per_page: int = 25, search: str = "", risk_level
     """Paginated list of invoices joined with analysis risk scores."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return _empty_page(page, per_page)
         query = session.query(Invoice, Analysis).join(Analysis, Invoice.invoice_no == Analysis.invoice_no)
+        query = query.filter(Invoice.upload_batch_id == active_batch_id)
 
         if search:
             search_term = f"%{search.strip()}%"
@@ -208,8 +276,7 @@ def get_invoices(page: int = 1, per_page: int = 25, search: str = "", risk_level
             ))
         elif anomaly_type == "Normal":
             query = query.filter(
-                Analysis.anomaly_type == "Normal",
-                Analysis.risk_level == "Low Risk",
+                Analysis.risk_level == "Normal",
             )
         elif anomaly_type:
             query = query.filter(Analysis.anomaly_type == anomaly_type)
@@ -240,12 +307,18 @@ def get_invoices(page: int = 1, per_page: int = 25, search: str = "", risk_level
 
 def get_suspicious_invoices(page: int = 1, per_page: int = 25, search: str = "",
                             risk_level: str = "", anomaly_type: str = ""):
-    """Retrieve only suspicious (Medium Risk & High Risk) transactions."""
+    """Retrieve anomaly records with low, medium, or high severity."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return _empty_page(page, per_page)
         query = session.query(Invoice, Analysis).join(
             Analysis, Invoice.invoice_no == Analysis.invoice_no
-        ).filter(Analysis.risk_level.in_(["Medium Risk", "High Risk"]))
+        ).filter(
+            Invoice.upload_batch_id == active_batch_id,
+            Analysis.risk_level.in_(["Low Risk", "Medium Risk", "High Risk"]),
+        )
 
         if search:
             search_term = f"%{search.strip()}%"
@@ -256,7 +329,7 @@ def get_suspicious_invoices(page: int = 1, per_page: int = 25, search: str = "",
                 (Invoice.product_category.like(search_term))
             )
 
-        if risk_level in ["Medium Risk", "High Risk"]:
+        if risk_level in ["Low Risk", "Medium Risk", "High Risk"]:
             query = query.filter(Analysis.risk_level == risk_level)
 
         if anomaly_type == "Statistical Model Outlier":
@@ -269,8 +342,7 @@ def get_suspicious_invoices(page: int = 1, per_page: int = 25, search: str = "",
             ))
         elif anomaly_type == "Normal":
             query = query.filter(
-                Analysis.anomaly_type == "Normal",
-                Analysis.risk_level == "Low Risk",
+                Analysis.risk_level == "Normal",
             )
         elif anomaly_type:
             query = query.filter(Analysis.anomaly_type == anomaly_type)
@@ -303,9 +375,15 @@ def get_invoice_by_no(invoice_no: str):
     """Retrieve complete transaction details, model scores, explanation, and investigation status for an invoice."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return None
         item = session.query(Invoice, Analysis).join(
             Analysis, Invoice.invoice_no == Analysis.invoice_no
-        ).filter(Invoice.invoice_no == invoice_no).first()
+        ).filter(
+            Invoice.invoice_no == invoice_no,
+            Invoice.upload_batch_id == active_batch_id,
+        ).first()
 
         if not item:
             return None
@@ -365,6 +443,12 @@ def get_or_create_investigation(invoice_no: str):
     """Fetch existing investigation or create a new one with default 'NEW' status."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None or not session.query(Invoice.invoice_no).filter(
+            Invoice.invoice_no == invoice_no,
+            Invoice.upload_batch_id == active_batch_id,
+        ).first():
+            raise LookupError(f"Invoice '{invoice_no}' does not exist in the active upload.")
         rec = session.query(Investigation).filter(Investigation.invoice_no == invoice_no).first()
         if not rec:
             rec = Investigation(invoice_no=invoice_no, status="NEW", assigned_to="Unassigned", notes="")
@@ -387,8 +471,12 @@ def update_investigation(
     from datetime import datetime
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            raise LookupError(f"Invoice '{invoice_no}' does not exist in the active upload.")
         invoice = session.query(Invoice.invoice_no).filter(
-            Invoice.invoice_no == invoice_no
+            Invoice.invoice_no == invoice_no,
+            Invoice.upload_batch_id == active_batch_id,
         ).first()
         if not invoice:
             raise LookupError(f"Invoice '{invoice_no}' does not exist.")
@@ -451,9 +539,14 @@ def get_investigation_history(invoice_no: str, limit: int = 50):
     """Return recent append-only investigation events in chronological order."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return []
         rows = (
             session.query(InvestigationHistory)
+            .join(Invoice, Invoice.invoice_no == InvestigationHistory.invoice_no)
             .filter(InvestigationHistory.invoice_no == invoice_no)
+            .filter(Invoice.upload_batch_id == active_batch_id)
             .order_by(InvestigationHistory.id.desc())
             .limit(min(max(limit, 1), 200))
             .all()
@@ -483,6 +576,9 @@ def get_supplier_metrics(page: int = 1, per_page: int = 20, search: str = "", so
     """
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return _empty_page(page, per_page)
         # Build base aggregation query
         q = session.query(
             Invoice.supplier_id,
@@ -497,6 +593,8 @@ def get_supplier_metrics(page: int = 1, per_page: int = 20, search: str = "", so
             func.sum(case((Analysis.risk_level == "Low Risk", 1), else_=0)).label("low_risk_count")
         ).join(
             Analysis, Invoice.invoice_no == Analysis.invoice_no
+        ).filter(
+            Invoice.upload_batch_id == active_batch_id
         ).group_by(
             Invoice.supplier_id
         )
@@ -513,13 +611,13 @@ def get_supplier_metrics(page: int = 1, per_page: int = 20, search: str = "", so
             high = r.high_risk_count or 0
             med = r.medium_risk_count or 0
             low = r.low_risk_count or 0
-            suspicious = high + med
+            suspicious = high + med + low
             avg_risk = round(float(r.avg_risk_score or 0.0), 2)
             max_risk = round(float(r.max_risk_score or 0.0), 2)
 
             # Supplier Composite Risk Index (0-100):
             # 50% average risk + 30% max risk + 20% proportion of high risk invoices
-            suspicious_ratio = (high * 2.0 + med * 1.0) / (tot * 2.0)
+            suspicious_ratio = (high * 2.0 + med * 1.0 + low * 0.5) / (tot * 2.0)
             supplier_risk_score = round(min(100.0, (avg_risk * 0.4) + (max_risk * 0.3) + (suspicious_ratio * 100.0 * 0.3)), 2)
 
             if supplier_risk_score >= 70.0:
@@ -578,11 +676,17 @@ def get_supplier_detail(supplier_id: str):
     """Retrieve full details, metrics, and invoices for a single supplier."""
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return None
         invoices_q = session.query(Invoice, Analysis, Investigation).join(
             Analysis, Invoice.invoice_no == Analysis.invoice_no
         ).outerjoin(
             Investigation, Invoice.invoice_no == Investigation.invoice_no
-        ).filter(Invoice.supplier_id == supplier_id).order_by(Analysis.risk_score.desc()).all()
+        ).filter(
+            Invoice.supplier_id == supplier_id,
+            Invoice.upload_batch_id == active_batch_id,
+        ).order_by(Analysis.risk_score.desc()).all()
 
         if not invoices_q:
             return None
@@ -592,6 +696,7 @@ def get_supplier_detail(supplier_id: str):
         total_invoices = len(invoices_q)
         total_taxable = sum(inv.taxable_value for inv, _, _ in invoices_q)
         total_tax = sum(inv.total_tax for inv, _, _ in invoices_q)
+        total_invoice_amount = sum(inv.total_amount for inv, _, _ in invoices_q)
         risk_scores = [ans.risk_score for _, ans, _ in invoices_q]
         avg_risk = round(float(sum(risk_scores) / total_invoices), 2)
         max_risk = round(float(max(risk_scores)), 2)
@@ -600,7 +705,9 @@ def get_supplier_detail(supplier_id: str):
         med_cnt = sum(1 for _, ans, _ in invoices_q if ans.risk_level == "Medium Risk")
         low_cnt = sum(1 for _, ans, _ in invoices_q if ans.risk_level == "Low Risk")
 
-        suspicious_ratio = (high_cnt * 2.0 + med_cnt * 1.0) / (total_invoices * 2.0)
+        suspicious_ratio = (
+            high_cnt * 2.0 + med_cnt + low_cnt * 0.5
+        ) / (total_invoices * 2.0)
         supplier_risk_score = round(min(100.0, (avg_risk * 0.4) + (max_risk * 0.3) + (suspicious_ratio * 100.0 * 0.3)), 2)
 
         if supplier_risk_score >= 70.0:
@@ -623,12 +730,13 @@ def get_supplier_detail(supplier_id: str):
             "total_invoices": total_invoices,
             "total_taxable_value": round(float(total_taxable), 2),
             "total_tax": round(float(total_tax), 2),
+            "total_invoice_amount": round(float(total_invoice_amount), 2),
             "avg_risk_score": avg_risk,
             "max_risk_score": max_risk,
             "high_risk_count": high_cnt,
             "medium_risk_count": med_cnt,
             "low_risk_count": low_cnt,
-            "suspicious_count": high_cnt + med_cnt,
+            "suspicious_count": high_cnt + med_cnt + low_cnt,
             "supplier_risk_score": supplier_risk_score,
             "supplier_risk_level": supplier_risk_level,
             "invoices": invoice_list
@@ -645,11 +753,15 @@ def get_review_queue(limit: int = 50):
     """
     session = SessionLocal()
     try:
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            return []
         items = session.query(Invoice, Analysis, Investigation).join(
             Analysis, Invoice.invoice_no == Analysis.invoice_no
         ).outerjoin(
             Investigation, Invoice.invoice_no == Investigation.invoice_no
         ).filter(
+            Invoice.upload_batch_id == active_batch_id,
             Analysis.risk_level.in_(["High Risk", "Medium Risk"])
         ).all()
 

@@ -10,11 +10,24 @@ The two tables are related via the unique invoice_no primary/foreign key.
 
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, String, Float, Integer, Text, DateTime, ForeignKey, create_engine
+    Column, String, Float, Integer, Text, DateTime, ForeignKey, create_engine,
+    Boolean
 )
 from sqlalchemy.orm import declarative_base, relationship
 
 Base = declarative_base()
+
+
+class UploadBatch(Base):
+    """Tracks the CSV dataset currently used by application-facing analytics."""
+
+    __tablename__ = "upload_batches"
+
+    id = Column(String(36), primary_key=True)
+    filename = Column(String(255), nullable=False)
+    uploaded_at = Column(String(30), nullable=False)
+    invoice_count = Column(Integer, nullable=False)
+    is_active = Column(Boolean, nullable=False, default=False, index=True)
 
 
 class Invoice(Base):
@@ -25,6 +38,7 @@ class Invoice(Base):
     __tablename__ = "invoices"
 
     invoice_no          = Column(String(50), primary_key=True, index=True)
+    upload_batch_id     = Column(String(36), nullable=True, index=True)
     invoice_date        = Column(String(20), index=True)
     supplier_id         = Column(String(50), index=True)
     supplier_gstin      = Column(String(20), index=True)
@@ -96,7 +110,7 @@ class Analysis(Base):
     max_abs_zscore    = Column(Float, nullable=False)
     zscore_anomaly    = Column(Integer, nullable=False)   # 1 if anomalous, 0 if normal
     risk_score        = Column(Float, nullable=False, index=True) # 0.0 to 100.0
-    risk_level        = Column(String(20), nullable=False, index=True)  # Low Risk, Medium Risk, High Risk
+    risk_level        = Column(String(20), nullable=False, index=True)  # Normal or Low/Medium/High Risk
     anomaly_type      = Column(String(100), default="Normal", index=True)
     explanation       = Column(Text)
     isolation_contribution = Column(Float, nullable=True)

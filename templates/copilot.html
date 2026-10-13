@@ -61,9 +61,6 @@
         <i class="bi bi-stars me-1 text-warning"></i>Data-Grounded Intelligence
       </span>
     </div>
-    <p class="text-muted small mb-0">
-      Invoice screening explanations, arithmetic checks, and general GST verification guidance; not a legal or ITC eligibility determination
-    </p>
   </div>
   {% if invoice %}
   <div class="d-flex align-items-center gap-2">
@@ -129,7 +126,7 @@
         <div class="text-secondary small lh-base">
           {% if invoice %}
             Hello! I am ready to analyze <strong>Invoice {{ invoice.invoice_no }}</strong>.
-            This transaction is currently classified as <span class="badge {% if invoice.risk_score >= 70 %}bg-danger{% elif invoice.risk_score >= 40 %}bg-warning text-dark{% else %}bg-success{% endif %} rounded-pill">{{ invoice.risk_level }}</span>
+            This transaction is currently classified as <span class="badge {% if invoice.risk_level == 'High Risk' %}bg-danger{% elif invoice.risk_level == 'Medium Risk' %}bg-warning text-dark{% else %}bg-success{% endif %} rounded-pill">{{ invoice.risk_level }}</span>
             (Risk Score: <strong>{{ invoice.risk_score }}/100</strong>, Anomaly Pattern: <em>{{ invoice.anomaly_type }}</em>).
             <br/><br/>
             Click any suggestion chip above or type any compliance question below regarding statutory rules, model consensus, or tax variance.
@@ -152,6 +149,11 @@
         type="hidden"
         id="copilot-invoice-no"
         value="{{ invoice.invoice_no if invoice else '' }}"
+      />
+      <input
+        type="hidden"
+        id="copilot-supplier-id"
+        value="{{ supplier.supplier_id if supplier else (invoice.supplier_id if invoice else '') }}"
       />
       <input
         type="text"
@@ -178,6 +180,7 @@ document.addEventListener("DOMContentLoaded", function () {
   var copilotInput = document.getElementById("copilot-input");
   var sendBtn = document.getElementById("copilot-send-btn");
   var invoiceNo = document.getElementById("copilot-invoice-no").value;
+  var supplierId = document.getElementById("copilot-supplier-id").value;
 
   function scrollToBottom() {
     chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -270,7 +273,8 @@ document.addEventListener("DOMContentLoaded", function () {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         query: promptText,
-        invoice_no: invoiceNo || null
+        invoice_no: invoiceNo || null,
+        supplier_id: supplierId || null
       })
     })
     .then(function (res) { return res.json(); })
@@ -278,6 +282,10 @@ document.addEventListener("DOMContentLoaded", function () {
       removeLoading();
       sendBtn.disabled = false;
       if (data.status === "success" && data.data) {
+        invoiceNo = data.invoice_no || invoiceNo;
+        supplierId = data.supplier_id || supplierId;
+        document.getElementById("copilot-invoice-no").value = invoiceNo;
+        document.getElementById("copilot-supplier-id").value = supplierId;
         appendAssistantMessage(data.data.answer, data.data.confidence);
       } else {
         appendAssistantMessage("I encountered an issue processing your query: " + (data.message || "Unknown error"), null);

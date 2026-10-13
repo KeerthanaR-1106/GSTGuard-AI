@@ -170,7 +170,7 @@ ANOMALY_ACTION_MAP = {
     },
     "Unusual Quantity": {
         "title": "Bulk Volume & Logistics Audit",
-        "description": "The recorded quantity was flagged as unusual within the analyzed batch; no independent category-volume benchmark is available.",
+        "description": "The recorded quantity was flagged as unusual against the training reference and uploaded dataset; no independent category-volume benchmark is available.",
         "risk_impact": "A volume outlier should be checked against order, receipt, and logistics records; it does not establish fictitious billing.",
         "actions": [
             {

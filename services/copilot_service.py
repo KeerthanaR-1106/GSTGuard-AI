@@ -6,7 +6,6 @@ Executes locally without external API dependencies. Answers questions by synthes
 actual transaction line items, ML model outputs, empirical benchmarks, and GST rules.
 """
 
-import re
 from collections import Counter
 from typing import Dict, Any, Optional
 from services.explanation_service import get_detailed_explanation
@@ -17,6 +16,10 @@ def _supplier_summary(supplier_data: Dict[str, Any], invoice_no: Optional[str] =
     supplier_id = supplier_data.get("supplier_id", "Unknown")
     supplier_gstin = supplier_data.get("supplier_gstin", "Unknown")
     invoice_records = supplier_data.get("invoices", [])
+    total_invoice_amount = supplier_data.get(
+        "total_invoice_amount",
+        sum(float(invoice.get("total_amount", 0.0) or 0.0) for invoice in invoice_records),
+    )
     anomaly_counts = Counter()
 
     for invoice in invoice_records:
@@ -43,12 +46,59 @@ def _supplier_summary(supplier_data: Dict[str, Any], invoice_no: Optional[str] =
         f"- **Supplier ID:** `{supplier_id}`\n"
         f"- **GSTIN:** `{supplier_gstin}`\n"
         f"- **Invoices in this dataset:** {supplier_data.get('total_invoices', len(invoice_records))}\n"
+        f"- **Taxable turnover in this dataset:** ₹{float(supplier_data.get('total_taxable_value', 0.0) or 0.0):,.2f}\n"
+        f"- **Total tax billed:** ₹{float(supplier_data.get('total_tax', 0.0) or 0.0):,.2f}\n"
+        f"- **Total invoice value:** ₹{float(total_invoice_amount or 0.0):,.2f}\n"
         f"- **Risk levels:** High {supplier_data.get('high_risk_count', 0)}, "
         f"Medium {supplier_data.get('medium_risk_count', 0)}, "
-        f"Low {supplier_data.get('low_risk_count', 0)}\n\n"
+        f"Low {supplier_data.get('low_risk_count', 0)}\n"
+        f"- **Average / maximum invoice risk index:** {float(supplier_data.get('avg_risk_score', 0.0) or 0.0):.1f} / "
+        f"{float(supplier_data.get('max_risk_score', 0.0) or 0.0):.1f} out of 100\n"
+        f"- **Supplier screening level:** {supplier_data.get('supplier_risk_level', 'Unavailable')}\n\n"
         f"**Anomaly patterns across its invoices:**\n{anomaly_summary}"
     )
     return {"answer": answer, "confidence": "High (Data-grounded)", "category": "supplier_summary"}
+
+
+def _invoice_details(invoice_data: Dict[str, Any]) -> Dict[str, str]:
+    invoice_no = invoice_data.get("invoice_no", "Unknown")
+    supplier_id = invoice_data.get("supplier_id", "Unknown")
+    supplier_gstin = invoice_data.get("supplier_gstin", "Unknown")
+    buyer_id = invoice_data.get("buyer_id", "Unknown")
+    buyer_gstin = invoice_data.get("buyer_gstin", "Unknown")
+    risk_score = float(invoice_data.get("risk_score", 0.0) or 0.0)
+    model_flags = (
+        f"Isolation Forest {'flagged' if invoice_data.get('isolation_anomaly') else 'did not flag'}; "
+        f"LOF {'flagged' if invoice_data.get('lof_anomaly') else 'did not flag'}; "
+        f"Z-score {'flagged' if invoice_data.get('zscore_anomaly') else 'did not flag'}."
+    )
+    answer = (
+        f"### Invoice Details: `{invoice_no}`\n\n"
+        f"- **Date:** {invoice_data.get('invoice_date', 'Not recorded')}\n"
+        f"- **Supplier:** `{supplier_id}` (GSTIN `{supplier_gstin}`)\n"
+        f"- **Buyer:** `{buyer_id}` (GSTIN `{buyer_gstin}`)\n"
+        f"- **Product / HSN:** {invoice_data.get('product_category', 'Not recorded')} / "
+        f"`{invoice_data.get('hsn_code', 'Not recorded')}`\n"
+        f"- **Quantity × unit price:** {float(invoice_data.get('quantity', 0.0) or 0.0):,.2f} × "
+        f"₹{float(invoice_data.get('unit_price', 0.0) or 0.0):,.2f}\n"
+        f"- **Discount:** {float(invoice_data.get('discount_percentage', 0.0) or 0.0):.2f}% "
+        f"(₹{float(invoice_data.get('discount_amount', 0.0) or 0.0):,.2f})\n"
+        f"- **Taxable value:** ₹{float(invoice_data.get('taxable_value', 0.0) or 0.0):,.2f}\n"
+        f"- **GST rate / tax:** {float(invoice_data.get('gst_rate', 0.0) or 0.0):.2f}% / "
+        f"₹{float(invoice_data.get('total_tax', 0.0) or 0.0):,.2f}\n"
+        f"- **Tax heads (CGST / SGST / IGST / cess):** "
+        f"₹{float(invoice_data.get('cgst', 0.0) or 0.0):,.2f} / "
+        f"₹{float(invoice_data.get('sgst', 0.0) or 0.0):,.2f} / "
+        f"₹{float(invoice_data.get('igst', 0.0) or 0.0):,.2f} / "
+        f"₹{float(invoice_data.get('cess_amount', 0.0) or 0.0):,.2f}\n"
+        f"- **Total amount:** ₹{float(invoice_data.get('total_amount', 0.0) or 0.0):,.2f}\n"
+        f"- **Payment method:** {invoice_data.get('payment_method', 'Not recorded')}\n"
+        f"- **Screening result:** {invoice_data.get('risk_level', 'Not recorded')} — "
+        f"{risk_score:.1f}/100; pattern: {invoice_data.get('anomaly_type', 'Not recorded')}\n"
+        f"- **Detector results:** {model_flags}\n"
+        "- The screening index is not a fraud probability or legal finding."
+    )
+    return {"answer": answer, "confidence": "High (Data-grounded)", "category": "invoice_details"}
 
 
 def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None, supplier_data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -69,7 +119,10 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
         total_tax = float(invoice_data.get("total_tax", 0.0))
         gst_rate = float(invoice_data.get("gst_rate", 0.0))
 
-        if any(term in q for term in ["company", "supplier", "vendor", "how many invoices", "produced", "issued"]):
+        if any(term in q for term in [
+            "company", "supplier", "vendor", "how many invoices", "produced", "issued",
+            "turnover", "total value", "total tax", "supplier risk",
+        ]):
             if supplier_data:
                 return _supplier_summary(supplier_data, inv_no)
             return {
@@ -80,6 +133,12 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
                 "confidence": "Limited (Supplier data unavailable)",
                 "category": "supplier_summary"
             }
+
+        if any(term in q for term in [
+            "invoice detail", "invoice information", "invoice particulars", "details about",
+            "tell me about", "full detail", "full information", "show invoice",
+        ]):
+            return _invoice_details(invoice_data)
 
         if any(term in q for term in [
             "reduce risk", "lower risk", "reduce the risk score", "lower the risk score",
@@ -121,7 +180,7 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
             answer = (
                 f"### Model Evaluation Breakdown for `{inv_no}`\n\n"
                 f"{model_cards}\n\n"
-                f"**Score:** Batch-relative 0–100 anomaly index. Each detector's displayed score contribution "
+                f"**Score:** Training-baseline 0–100 anomaly index. Each detector's displayed score contribution "
                 f"is added directly using its configured weight; detector agreement does not prove fraud. "
                 f"Category thresholds: Low <40, Medium 40–69.99, High ≥70. Current index: **{risk_score:.1f}/100**."
             )
@@ -146,7 +205,7 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
 
             answer = (
                 f"### Analysis for Invoice `{inv_no}`\n\n"
-                f"**Batch-relative anomaly index:** `{risk_score:.1f}/100` ({risk_level}); not a fraud probability.\n"
+                f"**Training-baseline anomaly index:** `{risk_score:.1f}/100` ({risk_level}); not a fraud probability.\n"
                 f"**Classification:** `{anomaly_type}`\n"
                 f"**Flagged by Models:** {m_text} ({exp['consensus_count']}/3 consensus)\n\n"
                 f"**Key Evidence Traced:**\n{evidence_bullets}\n\n"
@@ -194,7 +253,11 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
             }
 
         # 4. Actions to take / What should I do? / Next steps
-        if any(w in q for w in ["action", "recommend", "step", "fix", "resolve", "checklist", "what should i do", "what do i do"]):
+        if any(w in q for w in [
+            "action", "recommend", "suggest", "method", "approach", "procedure",
+            "step", "fix", "resolve", "checklist", "how to verify",
+            "what should i do", "what do i do",
+        ]):
             rec = get_recommendations_for_invoice(invoice_data)
             action_items = "\n".join([
                 f"{i+1}. **[{a['priority']}] {a['action']}**\n   - *Details:* {a['detail']}\n   - *Required Doc:* `{a['doc_required']}`"
@@ -216,7 +279,7 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
         if any(w in q for w in ["itc", "claim", "input tax", "safe", "credit"]):
             answer = (
                 f"### Input Tax Credit (ITC) Guidance for `{inv_no}`\n\n"
-                f"The batch-relative anomaly index is **{risk_score:.1f}/100 ({risk_level})** and the recorded pattern is "
+                f"The training-baseline anomaly index is **{risk_score:.1f}/100 ({risk_level})** and the recorded pattern is "
                 f"**{anomaly_type}**. This statistical screen neither establishes nor determines ITC eligibility, "
                 "and it cannot by itself support a decision to claim, defer, or reverse credit.\n\n"
                 "Verify the source tax invoice, receipt of the supply, supplier-reported details and applicable "
@@ -249,13 +312,20 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
         if any(w in q for w in ["risk level", "risk category", "risk categories", "risk threshold", "risk thresholds"]):
             answer = (
                 f"### Risk Classification for Invoice `{inv_no}`\n\n"
-                f"This invoice has a batch-relative anomaly index of **{risk_score:.1f}/100**, classified as **{risk_level}**. "
+                f"This invoice has a training-baseline anomaly index of **{risk_score:.1f}/100**, classified as **{risk_level}**. "
                 "The index is not a fraud probability or legal conclusion.\n\n"
                 "- **Low screening priority:** <40\n"
                 "- **Medium screening priority:** 40–<70\n"
                 "- **High screening priority:** ≥70"
             )
             return {"answer": answer, "confidence": "High (Data-grounded)", "category": "risk_thresholds"}
+
+    if supplier_data and any(term in q for term in [
+        "supplier", "vendor", "turnover", "total invoices", "how many invoices",
+        "invoice count", "how many", "invoice volume",
+        "gstin", "tax billed", "risk profile", "anomaly pattern",
+    ]):
+        return _supplier_summary(supplier_data)
 
     # ── CASE 2: General Knowledge & FAQ Queries ──────────────────────────────
     if any(w in q for w in ["gstr-2b", "gstr 2b", "2b"]):
@@ -285,21 +355,25 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
             "1. **Isolation Forest (40% Weight):** Detects global multidimensional outliers via random decision trees.\n"
             "2. **Local Outlier Factor (40% Weight):** Evaluates local neighborhood density around each invoice.\n"
             "3. **Statistical Z-Score (20% Weight):** Scales the maximum absolute standardized feature deviation.\n\n"
-            "Isolation Forest and LOF outputs are min-max scaled within the analyzed batch; the Z-score term is "
+            "Isolation Forest and LOF outputs are min-max scaled against the training-set score ranges; "
+            "Z-scores use training-set feature means and standard deviations. Frequency features use the "
+            "training reference together with the uploaded CSV; the Z-score term is "
             "`min(max_abs_zscore / 8 × 100, 100)`. The terms are weighted 40% / 40% / 20% and added. "
-            "The result is a batch-relative 0–100 screening index, not a fraud probability. Detector agreement "
-            "does not alter the index or prove fraud, and scores may change when the batch changes."
+            "The result is a training-baseline 0–100 screening index, not a fraud probability. Detector agreement "
+            "does not alter the index or prove fraud. Scores can vary with the training reference and the "
+            "uploaded rows used to calculate activity features."
         )
         return {"answer": answer, "confidence": "Data-grounded explanation", "category": "general_ml"}
 
     if any(w in q for w in ["risk level", "risk category", "risk categories", "risk threshold", "risk thresholds"]):
         answer = (
             "### GSTGuard AI Risk Categories\n\n"
-            "Invoice risk scores are classified using these thresholds:\n\n"
+            "An invoice with no detected anomaly is classified as **Normal**. When an anomaly is "
+            "detected, its severity is based on the training-baseline screening score:\n\n"
             "- **Low Risk:** 0–39\n"
             "- **Medium Risk:** 40–69\n"
             "- **High Risk:** 70–100\n\n"
-            "Higher scores indicate a greater need for supporting-document and compliance review."
+            "Higher anomaly severity indicates a greater need for supporting-document and compliance review."
         )
         return {"answer": answer, "confidence": "High", "category": "risk_thresholds"}
 
@@ -308,7 +382,7 @@ def query_copilot(query_text: str, invoice_data: Optional[Dict[str, Any]] = None
         exp = get_detailed_explanation(invoice_data)
         answer = (
             f"### Invoice `{invoice_data.get('invoice_no')}` Overview\n\n"
-            f"- **Screening priority:** {invoice_data.get('risk_level')} ({invoice_data.get('risk_score', 0):.1f}/100, batch-relative)\n"
+            f"- **Screening priority:** {invoice_data.get('risk_level')} ({invoice_data.get('risk_score', 0):.1f}/100, training-baseline)\n"
             f"- **Anomaly Type:** {invoice_data.get('anomaly_type')}\n"
             f"- **Summary:** {exp['summary']}\n\n"
             f"You can ask me:\n"

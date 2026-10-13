@@ -107,7 +107,7 @@ def api_get_invoices():
       - page (int, default=1)
       - per_page (int, default=20)
       - search (string)
-      - risk_level (Low Risk, Medium Risk, High Risk)
+      - risk_level (Normal, Low Risk, Medium Risk, High Risk)
       - anomaly_type (string)
     """
     try:

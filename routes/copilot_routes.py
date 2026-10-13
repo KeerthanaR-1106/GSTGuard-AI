@@ -17,11 +17,20 @@ copilot_bp = Blueprint("copilot", __name__)
 def copilot_view():
     """Dedicated interactive Compliance Copilot workspace."""
     invoice_no = request.args.get("invoice_no", "").strip()
+    supplier_id = request.args.get("supplier_id", "").strip()
     invoice_data = None
     if invoice_no:
         invoice_data = get_invoice_by_no(invoice_no)
+        if invoice_data and not supplier_id:
+            supplier_id = invoice_data.get("supplier_id", "")
+    supplier_data = get_supplier_detail(supplier_id) if supplier_id else None
 
-    return render_template("copilot.html", invoice_no=invoice_no, invoice=invoice_data)
+    return render_template(
+        "copilot.html",
+        invoice_no=invoice_no,
+        invoice=invoice_data,
+        supplier=supplier_data,
+    )
 
 
 @copilot_bp.route("/api/copilot/query", methods=["POST"])
@@ -44,15 +53,17 @@ def api_copilot_query():
             }), 400
 
         invoice_no = str(data.get("invoice_no") or "").strip()
-        if not invoice_no:
-            invoice_match = re.search(r"\bINV\d+\b", query_text, re.IGNORECASE)
-            if invoice_match:
-                invoice_no = invoice_match.group(0).upper()
+        invoice_match = re.search(r"\bINV\d+\b", query_text, re.IGNORECASE)
+        if invoice_match:
+            invoice_no = invoice_match.group(0).upper()
         supplier_id = str(data.get("supplier_id") or "").strip()
-        if not supplier_id:
-            supplier_match = re.search(r"\bSUP[A-Z0-9-]+\b", query_text, re.IGNORECASE)
-            if supplier_match:
-                supplier_id = supplier_match.group(0).upper()
+        supplier_match = re.search(
+            r"\bSUP(?:\d+[A-Z0-9-]*|[-_][A-Z0-9-]+)\b",
+            query_text,
+            re.IGNORECASE,
+        )
+        if supplier_match:
+            supplier_id = supplier_match.group(0).upper()
 
         invoice_data = None
         if invoice_no:
@@ -63,7 +74,7 @@ def api_copilot_query():
                     "message": f"Invoice {invoice_no} was not found. Check the invoice number and try again."
                 }), 404
 
-        if invoice_data and not supplier_id:
+        if invoice_data and not supplier_match:
             supplier_id = invoice_data.get("supplier_id", "")
 
         supplier_data = None
@@ -80,6 +91,10 @@ def api_copilot_query():
             "status": "success",
             "query": query_text,
             "invoice_no": invoice_no or None,
+            "supplier_id": (
+                supplier_data.get("supplier_id")
+                if supplier_data else supplier_id or None
+            ),
             "data": result
         }), 200
 

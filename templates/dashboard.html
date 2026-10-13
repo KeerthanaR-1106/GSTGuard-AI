@@ -33,6 +33,13 @@
 {% endblock %}
 
 {% block content %}
+{% if not has_uploaded_csv %}
+<div class="alert alert-info border-0 rounded-3 mb-4" role="status">
+  <i class="bi bi-info-circle me-2"></i>
+  Upload and analyze a CSV to populate dashboard statistics, the priority queue, and supplier profiles.
+  <a href="/upload" class="alert-link ms-1">Upload &amp; Analyze</a>
+</div>
+{% endif %}
 <!-- Page Header -->
 <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
   <div>
@@ -44,9 +51,6 @@
         Multi-Model Consensus
       </span>
     </div>
-    <p class="text-muted small mb-0">
-      Batch-relative statistical screening of invoice records; findings require human verification
-    </p>
   </div>
   <div class="d-flex align-items-center gap-2">
     <div class="d-inline-flex align-items-center gap-2 bg-white px-3 py-2 rounded-pill border shadow-sm small text-secondary">
@@ -154,11 +158,11 @@
             <i class="bi bi-shield-check"></i>
           </div>
           <div>
-            <div class="text-uppercase fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.05em;">Low Risk</div>
+            <div class="text-uppercase fw-bold text-muted" style="font-size: 0.72rem; letter-spacing: 0.05em;">Low Severity Anomalies</div>
             <h4 class="fw-bold mb-0 text-success">{{ summary.low_risk }}</h4>
           </div>
         </div>
-        <span class="risk-badge risk-low">Score 0&ndash;39</span>
+        <span class="risk-badge risk-low">Score &lt; 40</span>
       </div>
     </div>
   </div>
@@ -218,7 +222,6 @@
           <h5 class="fw-bold mb-0 text-dark">
             <i class="bi bi-pie-chart-fill text-primary me-2"></i>Risk Distribution
           </h5>
-          <p class="text-muted small mb-0">Invoice count partitioned by risk severity</p>
         </div>
         <span class="badge bg-light text-dark border">3 Tiers</span>
       </div>
@@ -240,7 +243,7 @@
         <div class="d-flex justify-content-around flex-wrap gap-2 text-center small">
           <div>
             <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#10b981;"></span>
-            <span class="text-muted">Low: </span><strong>{{ summary.low_risk }}</strong>
+            <span class="text-muted">Low severity: </span><strong>{{ summary.low_risk }}</strong>
           </div>
           <div>
             <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#f59e0b;"></span>
@@ -249,6 +252,10 @@
           <div>
             <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#ef4444;"></span>
             <span class="text-muted">High: </span><strong>{{ summary.high_risk }}</strong>
+          </div>
+          <div>
+            <span class="d-inline-block rounded-circle me-1" style="width:10px;height:10px;background:#0d9488;"></span>
+            <span class="text-muted">Normal: </span><strong>{{ summary.normal_invoices }}</strong>
           </div>
         </div>
       </div>
@@ -263,7 +270,6 @@
           <h5 class="fw-bold mb-0 text-dark">
             <i class="bi bi-bar-chart-fill text-danger me-2"></i>Anomaly Type Breakdown
           </h5>
-          <p class="text-muted small mb-0">Frequency of individual anomaly patterns flagged by ML models</p>
         </div>
         <span class="badge bg-danger-subtle text-danger border border-danger-subtle">
           {{ summary.anomaly_types|length }} Patterns Detected
@@ -298,7 +304,6 @@
           <h5 class="fw-bold mb-0 text-dark">
             <i class="bi bi-list-check text-danger me-2"></i>Priority Review Queue
           </h5>
-          <p class="text-muted small mb-0">Review priority reflects the screening index, detector flags, and taxable exposure</p>
         </div>
         <a href="/review-queue" class="btn btn-sm btn-outline-primary rounded-pill px-3">
           Full Queue <i class="bi bi-arrow-right ms-1"></i>
@@ -367,7 +372,6 @@
           <h5 class="fw-bold mb-0 text-dark">
             <i class="bi bi-building-exclamation text-warning me-2"></i>Top Risky Suppliers
           </h5>
-          <p class="text-muted small mb-0">Vendors with high anomaly concentration</p>
         </div>
         <a href="/suppliers" class="btn btn-sm btn-outline-primary rounded-pill px-3">
           All Vendors <i class="bi bi-arrow-right ms-1"></i>
@@ -419,27 +423,6 @@
 
 </div>
 
-<!-- ===== ROW 5: Explanatory Compliance Footer ===== -->
-<div class="card border-0 bg-white shadow-sm p-4 rounded-4 mb-4">
-  <div class="d-flex align-items-start gap-3">
-    <div class="stat-icon icon-primary flex-shrink-0" style="width: 44px; height: 44px;">
-      <i class="bi bi-info-circle-fill fs-5"></i>
-    </div>
-    <div class="flex-grow-1">
-      <h6 class="fw-bold text-dark mb-1">How the Anomaly Index Is Calculated</h6>
-      <p class="text-secondary small mb-2 lh-base">
-        GSTGuard AI uses an unsupervised ensemble of <strong>Isolation Forest</strong> (tree partition isolation), <strong>Local Outlier Factor</strong> (local density anomalies), and <strong>Z-Score Analysis</strong> (statistical variance across 43 engineered features).
-        Batch-relative detector scores are normalized and combined into a <strong>screening index (0&ndash;100)</strong>. This is not a fraud probability, legal finding, or cross-batch comparable score.
-      </p>
-      <div class="d-flex gap-4 flex-wrap text-muted small">
-        <div><span class="badge bg-success me-1">0&ndash;39 Low Risk</span> Clean, compliant transactions</div>
-        <div><span class="badge bg-warning text-dark me-1">40&ndash;69 Medium Risk</span> Recommended officer verification</div>
-        <div><span class="badge bg-danger me-1">&ge; 70 High Anomaly Risk</span> Prioritize human review; verify source documents before any compliance decision</div>
-      </div>
-    </div>
-  </div>
-</div>
-
 <!-- Embed summary data as JSON for JavaScript -->
 <script id="summary-data" type="application/json">{{ summary | tojson }}</script>
 {% endblock %}
@@ -465,11 +448,12 @@
   /* 1. Doughnut Chart */
   function initDoughnutChart() {
     var dist = summary.risk_distribution || {};
-    var labels = ["Low Risk", "Medium Risk", "High Risk"];
+    var labels = ["Low Severity", "Medium Severity", "High Severity", "Normal"];
     var values = [
       dist["Low Risk"] || 0,
       dist["Medium Risk"] || 0,
-      dist["High Risk"] || 0
+      dist["High Risk"] || 0,
+      dist["Normal"] || 0
     ];
 
     var ctx = document.getElementById("riskDoughnutChart").getContext("2d");
@@ -479,7 +463,7 @@
         labels: labels,
         datasets: [{
           data: values,
-          backgroundColor: ["#10b981", "#f59e0b", "#ef4444"],
+          backgroundColor: ["#10b981", "#f59e0b", "#ef4444", "#0d9488"],
           borderColor: "#ffffff",
           borderWidth: 3,
           hoverOffset: 8

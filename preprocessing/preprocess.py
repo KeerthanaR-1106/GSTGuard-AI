@@ -286,16 +286,23 @@ def compute_frequency_features(df: pd.DataFrame) -> pd.DataFrame:
 #  SECTION 5 – Duplicate Detection Feature
 # =============================================================================
 
-def compute_duplicate_features(df: pd.DataFrame) -> pd.DataFrame:
+def compute_duplicate_features(
+    df: pd.DataFrame,
+    duplicate_context_start: int | None = None,
+) -> pd.DataFrame:
     """
     Detect near-duplicate transactions.
     A duplicate is defined as another row with the same:
       supplier_gstin, buyer_gstin, quantity, unit_price, gst_rate, taxable_value
     but a different invoice_no.
+    When duplicate_context_start is provided, rows before and after that position
+    are checked in separate datasets.
     """
     print("[5/6] Computing duplicate transaction features ...")
 
     df = df.copy()
+    if duplicate_context_start is not None and not 0 <= duplicate_context_start <= len(df):
+        raise ValueError("duplicate_context_start must be within the dataframe bounds.")
 
     # Signature: key fields that identify the transaction content
     DUPE_KEYS = [
@@ -318,14 +325,25 @@ def compute_duplicate_features(df: pd.DataFrame) -> pd.DataFrame:
     )
 
     # Count how many times each signature appears
-    sig_counts = df.groupby("_sig")["invoice_no"].transform("count")
+    if duplicate_context_start is None:
+        sig_counts = df.groupby("_sig")["invoice_no"].transform("count")
+    else:
+        df["_duplicate_scope"] = (
+            np.arange(len(df)) >= duplicate_context_start
+        )
+        sig_counts = df.groupby(
+            ["_duplicate_scope", "_sig"]
+        )["invoice_no"].transform("count")
     df["duplicate_transaction_frequency"] = sig_counts
 
     # Flag: 1 if there is at least one other row with the same signature
     df["duplicate_transaction_flag"] = (sig_counts > 1).astype(int)
 
     # Drop helper columns
-    df.drop(columns=["_q_r", "_up_r", "_tv_r", "_sig"], inplace=True)
+    helper_columns = ["_q_r", "_up_r", "_tv_r", "_sig"]
+    if duplicate_context_start is not None:
+        helper_columns.append("_duplicate_scope")
+    df.drop(columns=helper_columns, inplace=True)
 
     n_dup = df["duplicate_transaction_flag"].sum()
     print(f"      Duplicate transactions flagged: {n_dup}")

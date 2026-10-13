@@ -21,13 +21,18 @@ from pathlib import Path
 from app import create_app
 from database.database import (
     SessionLocal, Invoice, Analysis, get_review_queue, get_supplier_metrics,
-    get_supplier_detail, get_or_create_investigation
+    get_supplier_detail, get_or_create_investigation, get_active_upload_batch_id
 )
 from services.explanation_service import get_detailed_explanation
 from services.recommendation_service import get_recommendations_for_invoice
 from services.copilot_service import query_copilot
 from services.report_service import generate_invoice_report_data
-from services.anomaly_service import calculate_weighted_anomaly_index, classify_risk_level
+from services.anomaly_service import (
+    _build_features,
+    calculate_weighted_anomaly_index,
+    classify_risk_level,
+    run_anomaly_pipeline,
+)
 from services.financial_validation import validate_invoice_arithmetic
 import pandas as pd
 
@@ -38,6 +43,94 @@ class TestGSTGuardAI(unittest.TestCase):
     def setUpClass(cls):
         cls.app = create_app()
         cls.client = cls.app.test_client()
+        login_response = cls.client.post(
+            "/login",
+            data={
+                "username": cls.app.config["DEMO_USER"],
+                "password": cls.app.config["DEMO_PASSWORD"],
+            },
+        )
+        if login_response.status_code != 302:
+            raise RuntimeError("Failed to authenticate the integration test client.")
+        session = SessionLocal()
+        try:
+            session.add_all([
+                Invoice(
+                    invoice_no="TRAINING-ONLY-001",
+                    invoice_date="2023-01-01",
+                    supplier_id="TRAINING-ONLY",
+                    supplier_gstin="29ABCDE1234F1Z5",
+                    buyer_id="TRAINING-BUYER",
+                    buyer_gstin="29ABCDE5678F1Z5",
+                    product_category="Training",
+                    hsn_code="0000",
+                    quantity=1,
+                    unit_price=10,
+                    discount_percentage=0,
+                    discount_amount=0,
+                    taxable_value=10,
+                    gst_rate=18,
+                    cgst=0.9,
+                    sgst=0.9,
+                    igst=0,
+                    cess_rate=0,
+                    cess_amount=0,
+                    total_tax=1.8,
+                    total_amount=11.8,
+                    payment_method="Test",
+                ),
+                Analysis(
+                    invoice_no="TRAINING-ONLY-001",
+                    isolation_score=0,
+                    isolation_anomaly=0,
+                    lof_score=0,
+                    lof_anomaly=0,
+                    max_abs_zscore=0,
+                    zscore_anomaly=0,
+                    risk_score=0,
+                    risk_level="Low Risk",
+                    anomaly_type="Normal",
+                    explanation="Training-only test row",
+                ),
+            ])
+            session.commit()
+        finally:
+            session.close()
+
+        empty_dashboard = cls.client.get("/api/dashboard").get_json()["data"]
+        empty_invoice_list = cls.client.get("/api/invoices").get_json()
+        if empty_dashboard["total_invoices"] != 0 or empty_invoice_list["pagination"]["total"] != 0:
+            raise RuntimeError("Legacy training rows leaked into application results.")
+
+        source = pd.read_csv(Path(__file__).with_name("gst_invoices.csv"))
+        supplier_examples = source[source["supplier_id"] == "SUP0079"].drop_duplicates(
+            "supplier_gstin"
+        ).head(2)
+        outlier = source.iloc[[0]].copy()
+        outlier["invoice_no"] = "INV987654321"
+        outlier["unit_price"] = 10_000_000
+        outlier["quantity"] = 10_000
+        outlier["taxable_value"] = 100_000_000_000
+        outlier["total_tax"] = 12_000_000_000
+        outlier["total_amount"] = 112_000_000_000
+        cls.baseline_frame = pd.concat(
+            [source.head(100), supplier_examples, outlier], ignore_index=True
+        )
+        response = cls.upload_frame(cls.baseline_frame, "test-baseline.csv")
+        if response.status_code != 200:
+            raise RuntimeError("Failed to load the test invoice dataset.")
+        with cls.client.session_transaction() as flask_session:
+            if not flask_session.get("has_uploaded_csv"):
+                raise RuntimeError("Successful CSV upload did not enable dashboard statistics.")
+
+    @classmethod
+    def upload_frame(cls, frame, filename):
+        buffer = io.BytesIO(frame.to_csv(index=False).encode("utf-8"))
+        return cls.client.post(
+            "/api/upload",
+            data={"file": (buffer, filename)},
+            content_type="multipart/form-data"
+        )
 
     # ── 1. App Factory & Blueprints ──────────────────────────────────────────
     def test_01_blueprints_registered(self):
@@ -46,18 +139,114 @@ class TestGSTGuardAI(unittest.TestCase):
         expected = {"dashboard", "invoices", "reports", "upload", "suppliers", "copilot"}
         self.assertTrue(expected.issubset(blueprint_names), f"Missing blueprints: {expected - blueprint_names}")
 
+    def test_01a_login_required_for_application_pages_and_apis(self):
+        """Unauthenticated visitors must sign in before accessing application data."""
+        with self.client.session_transaction() as flask_session:
+            flask_session.clear()
+
+        root_response = self.client.get("/")
+        dashboard_response = self.client.get("/dashboard")
+        queue_response = self.client.get("/review-queue")
+        api_response = self.client.get("/api/dashboard")
+
+        self.assertEqual(root_response.status_code, 302)
+        self.assertTrue(root_response.headers["Location"].endswith("/login"))
+        self.assertEqual(dashboard_response.status_code, 302)
+        self.assertTrue(dashboard_response.headers["Location"].endswith("/login"))
+        self.assertEqual(queue_response.status_code, 302)
+        self.assertTrue(queue_response.headers["Location"].endswith("/login"))
+        self.assertEqual(api_response.status_code, 401)
+        self.assertEqual(api_response.get_json()["status"], "error")
+
+        with self.client.session_transaction() as flask_session:
+            flask_session["logged_in"] = True
+            flask_session["user"] = "test-reviewer"
+            flask_session["has_uploaded_csv"] = True
+
+    def test_01b_dashboard_waits_for_csv_after_each_login(self):
+        """A fresh login hides the previous batch until a CSV is uploaded."""
+        with self.client.session_transaction() as flask_session:
+            self.assertTrue(flask_session.get("has_uploaded_csv"))
+
+        login_response = self.client.post(
+            "/login",
+            data={
+                "username": self.app.config["DEMO_USER"],
+                "password": self.app.config["DEMO_PASSWORD"],
+            },
+        )
+        self.assertEqual(login_response.status_code, 302)
+
+        dashboard_response = self.client.get("/dashboard")
+        self.assertEqual(dashboard_response.status_code, 200)
+        self.assertIn(b"Upload and analyze a CSV to populate dashboard statistics", dashboard_response.data)
+        self.assertIn(b"Total Invoices Evaluated", dashboard_response.data)
+        self.assertIn(b"Priority Review Queue", dashboard_response.data)
+        self.assertIn(b"Top Risky Suppliers", dashboard_response.data)
+        self.assertIn(b'"total_invoices": 0', dashboard_response.data)
+
+        for path, page_heading in (
+            ("/review-queue", b"Priority Review Queue"),
+            ("/suppliers", b"Supplier Risk"),
+            ("/reports", b"Export"),
+            ("/invoices", b"All Invoices Ledger"),
+            ("/suspicious", b"Invoices Flagged for Review"),
+        ):
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertIn(page_heading, response.data, path)
+
+        empty_lists = (
+            ("/api/review-queue", "data"),
+            ("/api/suppliers", "data"),
+            ("/api/invoices", "data"),
+            ("/api/suspicious-invoices", "data"),
+        )
+        for path, key in empty_lists:
+            response = self.client.get(path)
+            self.assertEqual(response.status_code, 200, path)
+            self.assertEqual(response.get_json()[key], [], path)
+
+        report_response = self.client.get("/api/export/csv")
+        self.assertEqual(report_response.status_code, 200)
+        self.assertEqual(
+            report_response.data.decode("utf-8").count("\n"),
+            1,
+            "CSV export should contain its header but no previous-session data.",
+        )
+
+        api_response = self.client.get("/api/dashboard")
+        self.assertEqual(api_response.status_code, 200)
+        self.assertEqual(api_response.get_json()["data"]["total_invoices"], 0)
+
+        upload_response = self.upload_frame(self.baseline_frame, "fresh-login-upload.csv")
+        self.assertEqual(upload_response.status_code, 200)
+        refreshed_dashboard = self.client.get("/dashboard")
+        self.assertIn(b"Total Invoices Evaluated", refreshed_dashboard.data)
+        self.assertIn(b'"total_invoices": 103', refreshed_dashboard.data)
+
+        with self.client.session_transaction() as flask_session:
+            self.assertTrue(flask_session.get("has_uploaded_csv"))
+
     # ── 2. Database Schema & Models ──────────────────────────────────────────
     def test_02_database_models(self):
         """Database must have Invoices, Analysis, and Investigations accessible."""
         session = SessionLocal()
         try:
-            inv_count = session.query(Invoice).count()
-            ans_count = session.query(Analysis).count()
+            active_batch_id = get_active_upload_batch_id(session)
+            inv_count = session.query(Invoice).filter(
+                Invoice.upload_batch_id == active_batch_id
+            ).count()
+            ans_count = session.query(Analysis).join(
+                Invoice, Invoice.invoice_no == Analysis.invoice_no
+            ).filter(Invoice.upload_batch_id == active_batch_id).count()
             self.assertGreater(inv_count, 0)
             self.assertGreater(ans_count, 0)
 
             # Test investigation query
-            first_inv = session.query(Invoice).first()
+            first_inv = session.query(Invoice).filter(
+                Invoice.upload_batch_id == active_batch_id
+            ).first()
             self.assertIsNotNone(first_inv)
 
             inv_rec = get_or_create_investigation(first_inv.invoice_no)
@@ -71,7 +260,10 @@ class TestGSTGuardAI(unittest.TestCase):
         """Test GET and PATCH /api/investigations/<invoice_no>."""
         session = SessionLocal()
         try:
-            first_inv = session.query(Invoice).first()
+            active_batch_id = get_active_upload_batch_id(session)
+            first_inv = session.query(Invoice).filter(
+                Invoice.upload_batch_id == active_batch_id
+            ).first()
             inv_no = first_inv.invoice_no
         finally:
             session.close()
@@ -85,6 +277,7 @@ class TestGSTGuardAI(unittest.TestCase):
         with self.client.session_transaction() as flask_session:
             flask_session["logged_in"] = True
             flask_session["user"] = "test-reviewer"
+            flask_session["has_uploaded_csv"] = True
 
         # PATCH update
         payload = {
@@ -112,7 +305,10 @@ class TestGSTGuardAI(unittest.TestCase):
     def test_03_investigation_rejects_invalid_updates(self):
         session = SessionLocal()
         try:
-            invoice_no = session.query(Invoice.invoice_no).first()[0]
+            active_batch_id = get_active_upload_batch_id(session)
+            invoice_no = session.query(Invoice.invoice_no).filter(
+                Invoice.upload_batch_id == active_batch_id
+            ).first()[0]
         finally:
             session.close()
         with self.client.session_transaction() as flask_session:
@@ -126,6 +322,7 @@ class TestGSTGuardAI(unittest.TestCase):
         with self.client.session_transaction() as flask_session:
             flask_session["logged_in"] = True
             flask_session["user"] = "test-reviewer"
+            flask_session["has_uploaded_csv"] = True
         invalid_status = self.client.patch(
             f"/api/investigations/{invoice_no}",
             json={"status": "FRAUD"}
@@ -153,8 +350,28 @@ class TestGSTGuardAI(unittest.TestCase):
             },
             content_type="multipart/form-data"
         )
-        self.assertEqual(collision_response.status_code, 409)
-        self.assertIn("were not overwritten", collision_response.get_json()["message"])
+        self.assertEqual(collision_response.status_code, 200)
+        self.assertEqual(collision_response.get_json()["processed_count"], 2)
+        self.assertEqual(
+            collision_response.get_json()["dataset_filename"],
+            "duplicate-ledger-ids.csv"
+        )
+        active_invoice_ids = {
+            item["invoice_no"]
+            for item in self.client.get("/api/invoices?per_page=100").get_json()["data"]
+        }
+        self.assertEqual(active_invoice_ids, set(original_sample["invoice_no"].astype(str)))
+        self.assertNotIn("TRAINING-ONLY-001", active_invoice_ids)
+        dashboard = self.client.get("/api/dashboard").get_json()["data"]
+        self.assertEqual(dashboard["total_invoices"], 2)
+        self.assertEqual(
+            self.client.get("/api/invoices?per_page=100").get_json()["pagination"]["total"],
+            2
+        )
+        exported = pd.read_csv(
+            io.BytesIO(self.client.get("/api/export/csv").data)
+        )
+        self.assertEqual(set(exported["Invoice No"]), active_invoice_ids)
 
         sample = original_sample.copy()
         sample["invoice_no"] = ["VALIDATION-001", "VALIDATION-002"]
@@ -186,6 +403,9 @@ class TestGSTGuardAI(unittest.TestCase):
         response = upload(invalid_date)
         self.assertEqual(response.status_code, 400)
         self.assertIn("invoice_date", response.get_json()["message"])
+
+        restored = self.upload_frame(self.baseline_frame, "test-baseline.csv")
+        self.assertEqual(restored.status_code, 200)
 
     # ── 4. Supplier Intelligence ─────────────────────────────────────────────
     def test_04_supplier_service_and_apis(self):
@@ -253,7 +473,7 @@ class TestGSTGuardAI(unittest.TestCase):
         self.assertIn("does not by itself", res1["answer"])
 
         scoring_guidance = query_copilot("Explain the ensemble scoring formula")
-        self.assertIn("batch-relative", scoring_guidance["answer"])
+        self.assertIn("training-set score ranges", scoring_guidance["answer"])
         self.assertNotIn("calibrated to", scoring_guidance["answer"])
 
         # General query API accepts the null invoice number sent by the web client.
@@ -281,7 +501,10 @@ class TestGSTGuardAI(unittest.TestCase):
         try:
             high_risk_inv = session.query(Invoice, Analysis).join(
                 Analysis, Invoice.invoice_no == Analysis.invoice_no
-            ).filter(Analysis.risk_level == "High Risk").first()
+            ).filter(
+                Invoice.upload_batch_id == get_active_upload_batch_id(session),
+                Analysis.risk_level == "High Risk"
+            ).first()
             if high_risk_inv:
                 inv_dict = high_risk_inv[0].to_dict()
                 inv_dict.update(high_risk_inv[1].to_dict())
@@ -293,7 +516,7 @@ class TestGSTGuardAI(unittest.TestCase):
         if inv_dict:
             res_why = query_copilot("Why was this invoice flagged?", invoice_data=inv_dict)
             self.assertIn("answer", res_why)
-            self.assertIn("Batch-relative anomaly index", res_why["answer"])
+            self.assertIn("Training-baseline anomaly index", res_why["answer"])
             itc_guidance = query_copilot("Is it safe to claim ITC?", invoice_data=inv_dict)
             self.assertIn("neither establishes nor determines ITC eligibility", itc_guidance["answer"])
             self.assertNotIn("SAFE TO CLAIM", itc_guidance["answer"])
@@ -325,8 +548,52 @@ class TestGSTGuardAI(unittest.TestCase):
             supplier_summary = supplier_summary_res.get_json()["data"]
             self.assertEqual(supplier_summary["category"], "supplier_summary")
             self.assertIn("Invoices in this dataset", supplier_summary["answer"])
+            self.assertIn("Taxable turnover in this dataset", supplier_summary["answer"])
+            self.assertIn("Total invoice value", supplier_summary["answer"])
             self.assertIn("Anomaly patterns", supplier_summary["answer"])
             self.assertIn("Not recorded in this dataset", supplier_summary["answer"])
+            self.assertEqual(
+                supplier_summary_res.get_json()["supplier_id"],
+                inv_dict["supplier_id"],
+            )
+
+            supplier_turnover_res = self.client.post(
+                "/api/copilot/query",
+                json={
+                    "query": (
+                        f"What is the total invoice turnover for supplier "
+                        f"{inv_dict['supplier_id']}?"
+                    )
+                },
+            )
+            self.assertEqual(supplier_turnover_res.status_code, 200)
+            supplier_turnover = supplier_turnover_res.get_json()["data"]
+            self.assertEqual(
+                supplier_turnover["category"],
+                "supplier_summary",
+                supplier_turnover_res.get_json(),
+            )
+            self.assertIn("Taxable turnover in this dataset", supplier_turnover["answer"])
+
+            invoice_details_res = self.client.post(
+                "/api/copilot/query",
+                json={"query": f"Show me the full invoice details for {inv_dict['invoice_no']}"},
+            )
+            self.assertEqual(invoice_details_res.status_code, 200)
+            invoice_details = invoice_details_res.get_json()["data"]
+            self.assertEqual(invoice_details["category"], "invoice_details")
+            self.assertIn("Total amount", invoice_details["answer"])
+            self.assertIn(inv_dict["invoice_no"], invoice_details["answer"])
+
+            suggested_methods_res = self.client.post(
+                "/api/copilot/query",
+                json={"query": f"Suggest methods to verify invoice {inv_dict['invoice_no']}"},
+            )
+            self.assertEqual(suggested_methods_res.status_code, 200)
+            self.assertEqual(
+                suggested_methods_res.get_json()["data"]["category"],
+                "recommendations",
+            )
 
             risk_reduction_res = self.client.post(
                 "/api/copilot/query",
@@ -455,6 +722,68 @@ class TestGSTGuardAI(unittest.TestCase):
         self.assertEqual(classify_risk_level(69.99), "Medium Risk")
         self.assertEqual(classify_risk_level(70.0), "High Risk")
 
+    def test_07c_duplicate_detection_excludes_training_reference(self):
+        """Only repeated signatures within the upload should be marked duplicate."""
+        reference = pd.read_csv(Path(__file__).with_name("gst_invoices.csv")).iloc[[0]]
+        first_upload = reference.copy()
+        first_upload["invoice_no"] = "UPLOAD-DUPLICATE-001"
+        single_upload = pd.concat([reference, first_upload], ignore_index=True)
+        _, prepared, _, _ = _build_features(
+            single_upload,
+            duplicate_context_start=1,
+        )
+        self.assertEqual(
+            int(prepared.iloc[1]["duplicate_transaction_flag"]),
+            0,
+        )
+
+        second_upload = first_upload.copy()
+        second_upload["invoice_no"] = "UPLOAD-DUPLICATE-002"
+        repeated_upload = pd.concat(
+            [reference, first_upload, second_upload],
+            ignore_index=True,
+        )
+        _, prepared, _, _ = _build_features(
+            repeated_upload,
+            duplicate_context_start=1,
+        )
+        self.assertEqual(
+            prepared.iloc[1:]["duplicate_transaction_flag"].tolist(),
+            [1, 1],
+        )
+
+    def test_07d_severity_is_normal_or_anomaly_level(self):
+        """Normal rows get Normal severity; every flagged pattern gets a score tier."""
+        upload_response = self.upload_frame(
+            self.baseline_frame,
+            "severity-regression.csv",
+        )
+        self.assertEqual(upload_response.status_code, 200)
+        analysis = run_anomaly_pipeline(self.baseline_frame)
+        expected_levels = {"Normal", "Low Risk", "Medium Risk", "High Risk"}
+        self.assertLessEqual(set(analysis["risk_level"]), expected_levels)
+        self.assertEqual(
+            analysis["risk_level"].eq("Normal").tolist(),
+            analysis["anomaly_type"].eq("Normal").tolist(),
+        )
+        self.assertTrue(analysis["risk_level"].eq("Normal").any())
+        self.assertTrue(analysis["risk_level"].ne("Normal").any())
+        dashboard = self.client.get("/api/dashboard").get_json()["data"]
+        self.assertEqual(
+            dashboard["normal_invoices"]
+            + dashboard["low_risk"]
+            + dashboard["medium_risk"]
+            + dashboard["high_risk"],
+            len(self.baseline_frame),
+        )
+        normal_filter = self.client.get(
+            "/api/invoices?risk_level=Normal&per_page=100"
+        ).get_json()
+        self.assertEqual(
+            normal_filter["pagination"]["total"],
+            dashboard["normal_invoices"],
+        )
+
     # ── 8. MSME Recommendation Action Center ─────────────────────────────────
     def test_08_msme_recommendations(self):
         """Test actionable checklists generated per anomaly type."""
@@ -475,6 +804,8 @@ class TestGSTGuardAI(unittest.TestCase):
         try:
             first_inv = session.query(Invoice, Analysis).join(
                 Analysis, Invoice.invoice_no == Analysis.invoice_no
+            ).filter(
+                Invoice.upload_batch_id == get_active_upload_batch_id(session)
             ).first()
             inv_dict = first_inv[0].to_dict()
             inv_dict.update(first_inv[1].to_dict())
@@ -499,6 +830,8 @@ class TestGSTGuardAI(unittest.TestCase):
     # ── 10. Centralized Anomaly Pipeline & Demo Analysis ─────────────────────
     def test_10_centralized_pipeline_and_demo(self):
         """Test anomaly service execution and demo analysis endpoint."""
+        if not Path(__file__).with_name("sample_upload.csv").exists():
+            self.skipTest("Packaged demo CSV is not present.")
         demo_res = self.client.post("/api/demo-analysis")
         self.assertEqual(demo_res.status_code, 200)
         demo_data = demo_res.get_json()
@@ -511,18 +844,30 @@ class TestGSTGuardAI(unittest.TestCase):
         """Test dashboard renders with review queue and invoice details with Risk Story."""
         dash_res = self.client.get("/dashboard")
         self.assertEqual(dash_res.status_code, 200)
+        self.assertIn(b"Total Invoices Evaluated", dash_res.data)
         self.assertIn(b"Priority Review Queue", dash_res.data)
         self.assertIn(b"Top Risky Suppliers", dash_res.data)
 
         session = SessionLocal()
         try:
-            first_inv = session.query(Invoice).first()
+            first_inv = session.query(Invoice).filter(
+                Invoice.upload_batch_id == get_active_upload_batch_id(session)
+            ).first()
             inv_no = first_inv.invoice_no
         finally:
             session.close()
 
         det_res = self.client.get(f"/invoice/{inv_no}")
         self.assertEqual(det_res.status_code, 200)
+        for removed_narrative in (
+            b"AI Risk Assessment Narrative",
+            b"Source provenance and any synthetic ground-truth label",
+            b"Peer price/quantity benchmarks are unavailable",
+            b"Weighted formula:",
+            b"Verification context:",
+            b"The unit price was flagged as an outlier by the batch analysis",
+        ):
+            self.assertNotIn(removed_narrative, det_res.data)
         self.assertIn(b"Invoice Arithmetic &amp; Screening Evidence", det_res.data)
         self.assertIn(b"MSME Compliance Action Center", det_res.data)
         self.assertIn(b"Compliance Investigation Tracker", det_res.data)

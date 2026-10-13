@@ -15,9 +15,6 @@
         Multi-Model Anomaly Pipeline
       </span>
     </div>
-    <p class="text-muted small mb-0">
-      Batch-evaluate GST sales and purchase records through Isolation Forest, LOF, and Z-Score models
-    </p>
   </div>
 </div>
 
@@ -65,15 +62,6 @@
           <div id="selected-file-name" class="mt-3 text-success fw-bold small"></div>
         </div>
 
-        <!-- Warning Notice -->
-        <div class="alert alert-warning border-0 rounded-3 d-flex align-items-start gap-2 py-2 px-3 mb-4 small" role="alert">
-          <i class="bi bi-exclamation-triangle-fill text-warning mt-1 flex-shrink-0"></i>
-          <div>
-            <strong>Compliance Note:</strong> Only <code>.csv</code> files with comma delimiters and headers are accepted.
-            The system executes 43 engineered feature derivations and real-time ensemble inference.
-          </div>
-        </div>
-
         <!-- Submit Button + Spinner -->
         <div class="d-flex align-items-center gap-3">
           <button type="button" id="upload-btn"
@@ -100,7 +88,7 @@
           <i class="bi bi-check-circle-fill text-success"></i>
           <span>Multi-Model Evaluation Complete</span>
         </h5>
-        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Database Synchronized</span>
+        <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Uploaded CSV Only</span>
       </div>
       <div class="card-body p-4">
         <div class="row g-3" id="result-metrics">
@@ -108,6 +96,9 @@
         </div>
         <hr class="my-4">
         <div class="d-flex flex-wrap gap-2">
+          <a href="/dashboard" class="btn btn-sm btn-success rounded-pill px-3">
+            <i class="bi bi-speedometer2 me-1"></i>View Dashboard Statistics
+          </a>
           <a href="/invoices" class="btn btn-sm btn-primary rounded-pill px-3">
             <i class="bi bi-receipt me-1"></i>View Invoices Ledger
           </a>
@@ -149,33 +140,33 @@
             </thead>
             <tbody class="small">
               <tr><td class="ps-3">1</td><td><code>invoice_no</code></td><td>Unique invoice identifier</td></tr>
-              <tr><td class="ps-3">2</td><td><code>gstin_supplier</code></td><td>Supplier GSTIN number</td></tr>
-              <tr><td class="ps-3">3</td><td><code>gstin_recipient</code></td><td>Recipient GSTIN number</td></tr>
-              <tr><td class="ps-3">4</td><td><code>invoice_date</code></td><td>Date of invoice (YYYY-MM-DD)</td></tr>
-              <tr><td class="ps-3">5</td><td><code>due_date</code></td><td>Payment due date (YYYY-MM-DD)</td></tr>
-              <tr><td class="ps-3">6</td><td><code>supply_type</code></td><td>B2B / B2C / EXPORT etc.</td></tr>
-              <tr><td class="ps-3">7</td><td><code>place_of_supply</code></td><td>State code of supply</td></tr>
-              <tr><td class="ps-3">8</td><td><code>taxable_value</code></td><td>Taxable amount (INR)</td></tr>
-              <tr><td class="ps-3">9</td><td><code>igst</code></td><td>Integrated GST amount (INR)</td></tr>
-              <tr><td class="ps-3">10</td><td><code>cgst</code></td><td>Central GST amount (INR)</td></tr>
-              <tr><td class="ps-3">11</td><td><code>sgst</code></td><td>State GST amount (INR)</td></tr>
-              <tr><td class="ps-3">12</td><td><code>total_tax</code></td><td>Total GST = IGST + CGST + SGST</td></tr>
-              <tr><td class="ps-3">13</td><td><code>invoice_value</code></td><td>taxable_value + total_tax</td></tr>
-              <tr><td class="ps-3">14</td><td><code>tax_rate</code></td><td>Applicable tax rate (%)</td></tr>
-              <tr><td class="ps-3">15</td><td><code>hsn_code</code></td><td>HSN / SAC commodity code</td></tr>
-              <tr><td class="ps-3">16</td><td><code>item_description</code></td><td>Goods / services description</td></tr>
-              <tr><td class="ps-3">17</td><td><code>quantity</code></td><td>Number of units supplied</td></tr>
-              <tr><td class="ps-3">18</td><td><code>unit_price</code></td><td>Price per unit (INR)</td></tr>
-              <tr><td class="ps-3">19</td><td><code>payment_status</code></td><td>Paid / Unpaid / Partial</td></tr>
-              <tr><td class="ps-3">20</td><td><code>e_invoice_irn</code></td><td>E-invoice IRN reference</td></tr>
-              <tr><td class="ps-3">21</td><td><code>e_way_bill_no</code></td><td>E-way bill number</td></tr>
-              <tr><td class="ps-3">22</td><td><code>filing_period</code></td><td>GST filing period (MMYYYY)</td></tr>
+              <tr><td class="ps-3">2</td><td><code>invoice_date</code></td><td>Invoice date</td></tr>
+              <tr><td class="ps-3">3</td><td><code>supplier_id</code></td><td>Supplier identifier</td></tr>
+              <tr><td class="ps-3">4</td><td><code>supplier_gstin</code></td><td>Supplier GSTIN</td></tr>
+              <tr><td class="ps-3">5</td><td><code>buyer_id</code></td><td>Buyer identifier</td></tr>
+              <tr><td class="ps-3">6</td><td><code>buyer_gstin</code></td><td>Buyer GSTIN</td></tr>
+              <tr><td class="ps-3">7</td><td><code>product_category</code></td><td>Product or service category</td></tr>
+              <tr><td class="ps-3">8</td><td><code>hsn_code</code></td><td>HSN / SAC commodity code</td></tr>
+              <tr><td class="ps-3">9</td><td><code>quantity</code></td><td>Quantity supplied</td></tr>
+              <tr><td class="ps-3">10</td><td><code>unit_price</code></td><td>Price per unit</td></tr>
+              <tr><td class="ps-3">11</td><td><code>discount_percentage</code></td><td>Discount rate (%)</td></tr>
+              <tr><td class="ps-3">12</td><td><code>discount_amount</code></td><td>Discount amount</td></tr>
+              <tr><td class="ps-3">13</td><td><code>taxable_value</code></td><td>Taxable amount</td></tr>
+              <tr><td class="ps-3">14</td><td><code>gst_rate</code></td><td>GST rate (%)</td></tr>
+              <tr><td class="ps-3">15</td><td><code>cgst</code></td><td>Central GST amount</td></tr>
+              <tr><td class="ps-3">16</td><td><code>sgst</code></td><td>State GST amount</td></tr>
+              <tr><td class="ps-3">17</td><td><code>igst</code></td><td>Integrated GST amount</td></tr>
+              <tr><td class="ps-3">18</td><td><code>cess_rate</code></td><td>Cess rate (%)</td></tr>
+              <tr><td class="ps-3">19</td><td><code>cess_amount</code></td><td>Cess amount</td></tr>
+              <tr><td class="ps-3">20</td><td><code>total_tax</code></td><td>Total tax amount</td></tr>
+              <tr><td class="ps-3">21</td><td><code>total_amount</code></td><td>Total invoice amount</td></tr>
+              <tr><td class="ps-3">22</td><td><code>payment_method</code></td><td>Payment method</td></tr>
             </tbody>
           </table>
         </div>
       </div>
       <div class="card-footer bg-light text-muted small py-2 px-3">
-        <i class="bi bi-info-circle me-1"></i>All 22 columns are preprocessed automatically into 43 ML features.
+        <i class="bi bi-info-circle me-1"></i>Upload results replace the active analysis dataset; training and older records are not included in app statistics.
       </div>
     </div>
 
@@ -188,7 +179,7 @@
       <ul class="small mb-0 text-secondary ps-3">
         <li class="mb-1">Ensure numeric columns contain pure numerical values without currency prefixes.</li>
         <li class="mb-1">Use standard ISO <code>YYYY-MM-DD</code> date formatting for invoice date columns.</li>
-        <li>Missing values are handled seamlessly via statistical median and mode imputation.</li>
+        <li>Upload at least two invoices with unique invoice numbers and complete, non-negative numeric values.</li>
       </ul>
     </div>
 
@@ -331,7 +322,7 @@
 
         if (status === 200 && body.status === "success") {
           const s = body.summary || body;
-          showAlert("success", "<strong>Analysis Complete!</strong> Successfully processed " + (body.processed_count || 0) + " invoices.");
+          showAlert("success", "<strong>Analysis Complete!</strong> Analyzed " + (body.processed_count || 0) + " invoices from " + (body.dataset_filename || "your uploaded CSV") + ". App statistics and invoice views now use this upload only.");
           const cards = [
             buildMetricCard("Processed",    body.processed_count  !== undefined ? body.processed_count.toLocaleString() : "N/A", "text-primary", "receipt"),
             buildMetricCard("High Risk",    s.high_risk         !== undefined ? s.high_risk.toLocaleString()        : "N/A", "text-danger",  "shield-fill-exclamation"),

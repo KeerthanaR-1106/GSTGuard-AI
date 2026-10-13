@@ -133,23 +133,33 @@ def get_detailed_explanation(invoice_data: Dict[str, Any]) -> Dict[str, Any]:
     anomaly_type = invoice_data.get("anomaly_type", "Normal")
 
     # Generate multi-paragraph synthesized assessment
-    if risk_level == "High Risk":
+    if risk_level == "Normal":
         summary = (
-            f"This invoice has a high batch-relative anomaly index of {risk_score:.1f}/100. "
+            f"No anomaly was identified for this invoice; its training-baseline index is "
+            f"{risk_score:.1f}/100. This is not a legal compliance finding."
+        )
+    elif risk_level == "High Risk":
+        summary = (
+            f"This invoice has a high training-baseline anomaly index of {risk_score:.1f}/100. "
             f"{consensus_count} of 3 detectors flagged it; detector agreement is not proof of fraud. "
             f"Observed pattern: {anomaly_type}. Verify the source documents and tax treatment before "
             f"making a compliance decision."
         )
     elif risk_level == "Medium Risk":
         summary = (
-            f"This invoice has a medium batch-relative anomaly index of {risk_score:.1f}/100. "
+            f"This invoice has a medium training-baseline anomaly index of {risk_score:.1f}/100. "
             f"{consensus_count} of 3 detectors flagged it; this is a screening result, not a fraud finding. "
             f"Observed pattern: {anomaly_type}. Review relevant supporting documents."
         )
+    elif risk_level == "Low Risk":
+        summary = (
+            f"This invoice has a low-severity anomaly with a training-baseline index of "
+            f"{risk_score:.1f}/100. Review the observed pattern and supporting documents."
+        )
     else:
         summary = (
-            f"This invoice has a low batch-relative anomaly index of {risk_score:.1f}/100 in this analysis "
-            f"batch. This does not establish legal compliance; check the arithmetic findings and documents."
+            f"This invoice has a low training-baseline anomaly index of {risk_score:.1f}/100. "
+            f"This does not establish legal compliance; check the arithmetic findings and documents."
         )
 
     return {

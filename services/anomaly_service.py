@@ -11,6 +11,10 @@ Refactors and encapsulates the multi-model inference pipeline:
   - Audit explanation synthesis
 """
 
+import os
+from functools import lru_cache
+from typing import NamedTuple
+
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -27,12 +31,32 @@ from preprocessing.preprocess import (
 )
 
 
-def calculate_weighted_anomaly_index(if_scores, lof_scores, max_z):
-    """Combine batch-scaled detector outputs into a transparent 0–100 index."""
-    def batch_scale(scores):
+class _TrainingModels(NamedTuple):
+    reference_frame: pd.DataFrame
+    feature_cols: list[str]
+    scaler: StandardScaler
+    isolation_forest: IsolationForest
+    lof: LocalOutlierFactor
+    means: np.ndarray
+    stds: np.ndarray
+    isolation_range: tuple[float, float]
+    lof_range: tuple[float, float]
+
+
+def calculate_weighted_anomaly_index(
+    if_scores,
+    lof_scores,
+    max_z,
+    isolation_range=None,
+    lof_range=None,
+):
+    """Combine detector outputs into a transparent 0–100 index."""
+    def scale(scores, reference_range=None):
         scores = np.asarray(scores, dtype=float)
-        minimum = np.min(scores)
-        maximum = np.max(scores)
+        if reference_range is None:
+            minimum, maximum = np.min(scores), np.max(scores)
+        else:
+            minimum, maximum = reference_range
         if maximum <= minimum:
             return np.zeros_like(scores, dtype=float)
         return np.clip((scores - minimum) / (maximum - minimum) * 100.0, 0.0, 100.0)
@@ -41,9 +65,12 @@ def calculate_weighted_anomaly_index(if_scores, lof_scores, max_z):
         Config.WEIGHT_ISOLATION_FOREST + Config.WEIGHT_LOF + Config.WEIGHT_ZSCORE
     )
     isolation_contribution = (
-        batch_scale(if_scores) * Config.WEIGHT_ISOLATION_FOREST / weight_total
+        scale(if_scores, isolation_range)
+        * Config.WEIGHT_ISOLATION_FOREST / weight_total
     )
-    lof_contribution = batch_scale(lof_scores) * Config.WEIGHT_LOF / weight_total
+    lof_contribution = (
+        scale(lof_scores, lof_range) * Config.WEIGHT_LOF / weight_total
+    )
     zscore_contribution = (
         np.clip(np.asarray(max_z, dtype=float) / 8.0 * 100.0, 0.0, 100.0)
         * Config.WEIGHT_ZSCORE / weight_total
@@ -65,87 +92,167 @@ def classify_risk_level(score: float) -> str:
     return "High Risk"
 
 
-def run_anomaly_pipeline(df_raw: pd.DataFrame) -> pd.DataFrame:
-    """
-    Execute end-to-end unsupervised ML anomaly detection on raw invoice DataFrame.
-    Returns DataFrame matching analysis table schema.
-    """
+def _build_features(
+    df_raw: pd.DataFrame,
+    duplicate_context_start: int | None = None,
+):
+    """Prepare raw invoice rows using the same 43 features for training and scoring."""
     df = df_raw.copy()
-    if len(df) < 2:
-        raise ValueError("At least two invoices are required for anomaly analysis.")
+    df["invoice_date"] = pd.to_datetime(
+        df["invoice_date"], errors="coerce", format="mixed"
+    )
+    if df["invoice_date"].isna().any():
+        raise ValueError("Training or upload data contains an invalid invoice_date.")
 
-    # Numeric validation & date parsing
-    df["invoice_date"] = pd.to_datetime(df["invoice_date"], errors="coerce")
-    if df["invoice_date"].isnull().any():
-        median_date = df["invoice_date"].dropna().median()
-        df["invoice_date"] = df["invoice_date"].fillna(median_date)
-
-    num_cols = [
+    numeric_columns = [
         "quantity", "unit_price", "discount_percentage", "discount_amount",
         "taxable_value", "gst_rate", "cgst", "sgst", "igst",
         "cess_rate", "cess_amount", "total_tax", "total_amount"
     ]
-    for c in num_cols:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0).clip(lower=0.0)
+    for column in numeric_columns:
+        df[column] = pd.to_numeric(df[column], errors="coerce")
+        values = df[column].to_numpy(dtype=float)
+        if df[column].isna().any() or not np.isfinite(values).all():
+            raise ValueError(f"Training or upload data has invalid '{column}' values.")
+        df[column] = df[column].clip(lower=0.0)
 
-    # 1. Feature Engineering
-    df_prep = compute_consistency_features(df)
-    df_prep = compute_date_features(df_prep)
-    df_prep = compute_frequency_features(df_prep)
-    df_prep = compute_duplicate_features(df_prep)
-    feat_df, feature_cols = build_feature_matrix(df_prep)
+    prepared = compute_consistency_features(df)
+    prepared = compute_date_features(prepared)
+    prepared = compute_frequency_features(prepared)
+    prepared = compute_duplicate_features(
+        prepared,
+        duplicate_context_start=duplicate_context_start,
+    )
+    feature_frame, feature_cols = build_feature_matrix(prepared)
+    return df, prepared, feature_frame[feature_cols].to_numpy(dtype=float), feature_cols
 
-    # Scaled feature matrix
-    X = feat_df[feature_cols].values
+
+@lru_cache(maxsize=1)
+def _fit_training_models(training_path: str, _modified_ns: int) -> _TrainingModels:
+    """Fit and cache detectors against the fixed training CSV, never the upload."""
+    if os.stat(training_path).st_mtime_ns != _modified_ns:
+        raise RuntimeError("The training CSV changed while preparing model training.")
+    training = pd.read_csv(training_path)
+    if len(training) < 2:
+        raise ValueError("The training CSV must contain at least two invoices.")
+
+    _, _, x_train, feature_cols = _build_features(training)
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    x_train_scaled = scaler.fit_transform(x_train)
 
-    n_samples = len(df)
-
-    # 2. Model 1: Isolation Forest
-    if_model = IsolationForest(
-        n_estimators=100 if n_samples < 5000 else 200,
+    isolation_forest = IsolationForest(
+        n_estimators=200,
         contamination="auto",
         random_state=42,
         n_jobs=-1
     )
-    if_preds = if_model.fit_predict(X_scaled)
-    if_scores = -if_model.score_samples(X_scaled)
-    if_anom = (if_preds == -1).astype(int)
+    isolation_forest.fit(x_train_scaled)
 
-    # 3. Model 2: Local Outlier Factor
-    n_neighbors = min(20, n_samples - 1)
-    lof_model = LocalOutlierFactor(
-        n_neighbors=n_neighbors,
+    lof = LocalOutlierFactor(
+        n_neighbors=min(20, len(training) - 1),
         contamination="auto",
+        novelty=True,
         n_jobs=-1
     )
-    lof_preds = lof_model.fit_predict(X_scaled)
-    lof_scores = -lof_model.negative_outlier_factor_
+    lof.fit(x_train_scaled)
+
+    isolation_scores = -isolation_forest.score_samples(x_train_scaled)
+    lof_scores = -lof.negative_outlier_factor_
+    means = np.mean(x_train, axis=0)
+    stds = np.std(x_train, axis=0)
+    stds[stds == 0] = 1.0
+
+    trained_models = _TrainingModels(
+        reference_frame=training,
+        feature_cols=feature_cols,
+        scaler=scaler,
+        isolation_forest=isolation_forest,
+        lof=lof,
+        means=means,
+        stds=stds,
+        isolation_range=(
+            float(np.min(isolation_scores)),
+            float(np.max(isolation_scores)),
+        ),
+        lof_range=(float(np.min(lof_scores)), float(np.max(lof_scores))),
+    )
+    if os.stat(training_path).st_mtime_ns != _modified_ns:
+        raise RuntimeError("The training CSV changed while fitting the detectors.")
+    return trained_models
+
+
+def _get_training_models() -> _TrainingModels:
+    training_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data",
+        "gst_invoices.csv",
+    )
+    if not os.path.exists(training_path):
+        raise FileNotFoundError(f"Training CSV not found: {training_path}")
+    modified_ns = os.stat(training_path).st_mtime_ns
+    return _fit_training_models(training_path, modified_ns)
+
+
+def run_anomaly_pipeline(df_raw: pd.DataFrame) -> pd.DataFrame:
+    """
+    Score uploaded invoices against detectors fitted on the training CSV.
+    Returns analysis records for uploaded invoices only.
+    """
+    if len(df_raw) < 2:
+        raise ValueError("At least two invoices are required for anomaly analysis.")
+
+    training_models = _get_training_models()
+    training_count = len(training_models.reference_frame)
+    combined_frame = pd.concat(
+        [training_models.reference_frame, df_raw],
+        ignore_index=True,
+    )
+    all_df, all_df_prep, all_X, feature_cols = _build_features(
+        combined_frame,
+        duplicate_context_start=training_count,
+    )
+    if feature_cols != training_models.feature_cols:
+        raise ValueError("Uploaded CSV features do not match the training model.")
+    df = all_df.iloc[training_count:].reset_index(drop=True)
+    df_prep = all_df_prep.iloc[training_count:].reset_index(drop=True)
+    X = all_X[training_count:]
+    X_scaled = training_models.scaler.transform(X)
+    n_samples = len(df)
+
+    # 2. Apply Isolation Forest trained on the reference CSV.
+    if_preds = training_models.isolation_forest.predict(X_scaled)
+    if_scores = -training_models.isolation_forest.score_samples(X_scaled)
+    if_anom = (if_preds == -1).astype(int)
+
+    # 3. Apply novelty-mode LOF trained on the reference CSV.
+    lof_preds = training_models.lof.predict(X_scaled)
+    lof_scores = -training_models.lof.score_samples(X_scaled)
     lof_anom = (lof_preds == -1).astype(int)
 
-    # 4. Model 3: Statistical Z-Score
-    means = np.mean(X, axis=0)
-    stds = np.std(X, axis=0)
-    stds[stds == 0] = 1.0
-    Z = np.abs((X - means) / stds)
+    # 4. Statistical Z-Score uses statistics fitted on the training CSV.
+    Z = np.abs((X - training_models.means) / training_models.stds)
     max_z = np.max(Z, axis=1)
     z_anom = (max_z >= 3.0).astype(int)
     dom_idx = np.argmax(Z, axis=1)
     dom_feats = [feature_cols[i] for i in dom_idx]
 
-    # 5. Score Normalization (0 - 100)
     isolation_contribution, lof_contribution, zscore_contribution, risk_score = (
-        calculate_weighted_anomaly_index(if_scores, lof_scores, max_z)
+        calculate_weighted_anomaly_index(
+            if_scores,
+            lof_scores,
+            max_z,
+            isolation_range=training_models.isolation_range,
+            lof_range=training_models.lof_range,
+        )
     )
-    risk_levels = [classify_risk_level(float(score)) for score in risk_score]
+    score_levels = [classify_risk_level(float(score)) for score in risk_score]
+    risk_levels = []
 
     # 7. Audit Explanations & Anomaly Types
     explanations = []
     detected_types = []
     for i in range(n_samples):
-        lvl = risk_levels[i]
+        lvl = score_levels[i]
         scr = risk_score[i]
         models = []
         if if_anom[i]: models.append("Isolation Forest")
@@ -183,19 +290,26 @@ def run_anomaly_pipeline(df_raw: pd.DataFrame) -> pd.DataFrame:
             reasons.append("inter-state IGST calculation mismatch")
             dtype = "Incorrect IGST"
 
-        if lvl != "Low Risk" and dtype == "Normal":
+        if dtype == "Normal" and lvl != "Low Risk":
             dtype = "Statistical Model Outlier"
 
-        if lvl == "Low Risk":
-            exp = "No large anomaly was identified relative to this analysis batch. This is not a legal compliance finding."
-        elif lvl == "Medium Risk":
+        severity = lvl if dtype != "Normal" else "Normal"
+        risk_levels.append(severity)
+
+        if severity == "Normal":
+            exp = "No large anomaly was identified relative to the training baseline. This is not a legal compliance finding."
+        elif severity == "Low Risk":
+            m_str = ", ".join(models) if models else "Rule-based screening"
+            r_str = "; ".join(reasons) if reasons else f"variance in {dom_feats[i].replace('_', ' ')}"
+            exp = f"Low-severity anomaly identified by {m_str}. Review is recommended due to {r_str}."
+        elif severity == "Medium Risk":
             m_str = ", ".join(models) if models else "Statistical model"
             r_str = "; ".join(reasons) if reasons else f"variance in {dom_feats[i].replace('_', ' ')}"
-            exp = f"Medium batch-relative anomaly index flagged by {m_str}. Verification is recommended due to {r_str}."
+            exp = f"Medium training-baseline anomaly index flagged by {m_str}. Verification is recommended due to {r_str}."
         else:
             m_str = ", ".join(models) if models else "Multi-model consensus"
             r_str = "; ".join(reasons) if reasons else f"extreme variance in {dom_feats[i].replace('_', ' ')}"
-            exp = f"High batch-relative anomaly index ({scr:.1f}/100), flagged by {m_str}. Requires verification due to {r_str}; this is not proof of fraud."
+            exp = f"High training-baseline anomaly index ({scr:.1f}/100), flagged by {m_str}. Requires verification due to {r_str}; this is not proof of fraud."
 
         explanations.append(exp)
         detected_types.append(dtype)

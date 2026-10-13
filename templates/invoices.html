@@ -15,9 +15,6 @@
         {{ pagination.total }} Invoices Indexed
       </span>
     </div>
-    <p class="text-muted small mb-0">
-      Comprehensive transaction records with automated ML anomaly signals and composite risk scoring
-    </p>
   </div>
   <div class="d-flex gap-2">
     <a href="/suspicious" class="btn btn-sm btn-outline-danger rounded-pill px-3">
@@ -50,8 +47,9 @@
 
       <div class="col-6 col-md-3 col-lg-3">
         <select id="riskLevelSelect" name="risk_level" class="form-select form-select-sm rounded-pill">
-          <option value="" {% if not risk_level %}selected{% endif %}>All Risk Severity Tiers</option>
-          <option value="Low Risk" {% if risk_level in ['Low Risk', 'Low'] %}selected{% endif %}>Low Risk (&lt; 40)</option>
+          <option value="" {% if not risk_level %}selected{% endif %}>All Severity Levels</option>
+          <option value="Normal" {% if risk_level == 'Normal' %}selected{% endif %}>Normal</option>
+          <option value="Low Risk" {% if risk_level in ['Low Risk', 'Low'] %}selected{% endif %}>Low Severity Anomaly (&lt; 40)</option>
           <option value="Medium Risk" {% if risk_level in ['Medium Risk', 'Medium'] %}selected{% endif %}>Medium Risk (40&ndash;69)</option>
           <option value="High Risk" {% if risk_level in ['High Risk', 'High'] %}selected{% endif %}>High Risk (&ge; 70)</option>
         </select>
@@ -171,6 +169,8 @@
                 <span class="risk-badge risk-high">High</span>
               {% elif inv.risk_level in ['Medium Risk', 'Medium'] %}
                 <span class="risk-badge risk-medium">Medium</span>
+              {% elif inv.risk_level == 'Normal' %}
+                <span class="badge bg-success-subtle text-success border border-success-subtle">Normal</span>
               {% else %}
                 <span class="risk-badge risk-low">Low</span>
               {% endif %}

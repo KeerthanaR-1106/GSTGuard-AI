@@ -7,7 +7,9 @@ Compliance reporting, ML model performance metrics, and CSV export functionality
 import io
 import pandas as pd
 from flask import Blueprint, render_template, jsonify, send_file, request
-from database.database import SessionLocal, Invoice, Analysis
+from database.database import (
+    SessionLocal, Invoice, Analysis, get_active_upload_batch_id
+)
 
 report_bp = Blueprint("reports", __name__)
 
@@ -46,34 +48,39 @@ def api_export_csv():
     session = SessionLocal()
     try:
         risk_level = request.args.get("risk_level", "").strip()
+        active_batch_id = get_active_upload_batch_id(session)
+        if active_batch_id is None:
+            results = []
+        else:
+            query = session.query(
+                Invoice.invoice_no,
+                Invoice.invoice_date,
+                Invoice.supplier_id,
+                Invoice.supplier_gstin,
+                Invoice.buyer_id,
+                Invoice.buyer_gstin,
+                Invoice.product_category,
+                Invoice.quantity,
+                Invoice.unit_price,
+                Invoice.taxable_value,
+                Invoice.gst_rate,
+                Invoice.total_tax,
+                Invoice.total_amount,
+                Analysis.isolation_score,
+                Analysis.lof_score,
+                Analysis.max_abs_zscore,
+                Analysis.risk_score,
+                Analysis.risk_level,
+                Analysis.anomaly_type,
+                Analysis.explanation
+            ).join(Analysis, Invoice.invoice_no == Analysis.invoice_no).filter(
+                Invoice.upload_batch_id == active_batch_id
+            )
 
-        query = session.query(
-            Invoice.invoice_no,
-            Invoice.invoice_date,
-            Invoice.supplier_id,
-            Invoice.supplier_gstin,
-            Invoice.buyer_id,
-            Invoice.buyer_gstin,
-            Invoice.product_category,
-            Invoice.quantity,
-            Invoice.unit_price,
-            Invoice.taxable_value,
-            Invoice.gst_rate,
-            Invoice.total_tax,
-            Invoice.total_amount,
-            Analysis.isolation_score,
-            Analysis.lof_score,
-            Analysis.max_abs_zscore,
-            Analysis.risk_score,
-            Analysis.risk_level,
-            Analysis.anomaly_type,
-            Analysis.explanation
-        ).join(Analysis, Invoice.invoice_no == Analysis.invoice_no)
+            if risk_level:
+                query = query.filter(Analysis.risk_level == risk_level)
 
-        if risk_level:
-            query = query.filter(Analysis.risk_level == risk_level)
-
-        results = query.order_by(Analysis.risk_score.desc()).all()
+            results = query.order_by(Analysis.risk_score.desc()).all()
 
         # Build DataFrame
         columns = [
