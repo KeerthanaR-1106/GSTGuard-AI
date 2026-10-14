@@ -54,9 +54,6 @@
             <button type="button" id="browse-btn" class="btn btn-sm btn-outline-primary rounded-pill px-3">
               <i class="bi bi-folder2-open me-1"></i>Browse Local File
             </button>
-            <button type="button" id="demo-batch-btn" class="btn btn-sm btn-warning text-dark fw-bold rounded-pill px-3 shadow-sm">
-              <i class="bi bi-lightning-charge-fill me-1"></i>Run Demo Batch (100 Invoices)
-            </button>
           </div>
           <input type="file" id="csv-file-input" accept=".csv" class="d-none" aria-label="CSV file input">
           <div id="selected-file-name" class="mt-3 text-success fw-bold small"></div>
@@ -322,7 +319,7 @@
 
         if (status === 200 && body.status === "success") {
           const s = body.summary || body;
-          showAlert("success", "<strong>Analysis Complete!</strong> Analyzed " + (body.processed_count || 0) + " invoices from " + (body.dataset_filename || "your uploaded CSV") + ". App statistics and invoice views now use this upload only.");
+          showAlert("success", "<strong>Analysis Complete!</strong> Analyzed " + (body.processed_count || 0) + " invoices from " + (body.dataset_filename || "your uploaded CSV") + ".");
           const cards = [
             buildMetricCard("Processed",    body.processed_count  !== undefined ? body.processed_count.toLocaleString() : "N/A", "text-primary", "receipt"),
             buildMetricCard("High Risk",    s.high_risk         !== undefined ? s.high_risk.toLocaleString()        : "N/A", "text-danger",  "shield-fill-exclamation"),
@@ -348,44 +345,6 @@
       });
   });
 
-  const demoBtn = document.getElementById("demo-batch-btn");
-  if (demoBtn) {
-    demoBtn.addEventListener("click", function () {
-      demoBtn.disabled = true;
-      demoBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Running ML Models...';
-      dismissAlert();
-
-      fetch("/api/demo-analysis", { method: "POST" })
-        .then((res) => res.json())
-        .then((d) => {
-          demoBtn.disabled = false;
-          demoBtn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i>Run Demo Batch (100 Invoices)';
-
-          if (d.status === "success") {
-            const s = d.summary || d;
-            showAlert("success", "<strong>Demo Batch Evaluated!</strong> " + (d.message || ""));
-            const cards = [
-              buildMetricCard("Processed",    d.processed_count  !== undefined ? d.processed_count.toLocaleString() : "100", "text-primary", "receipt"),
-              buildMetricCard("High Risk",    s.high_risk         !== undefined ? s.high_risk.toLocaleString()        : "N/A", "text-danger",  "shield-fill-exclamation"),
-              buildMetricCard("Medium Risk",  s.medium_risk       !== undefined ? s.medium_risk.toLocaleString()      : "N/A", "text-warning", "shield-exclamation"),
-              buildMetricCard("Low Risk",     s.low_risk          !== undefined ? s.low_risk.toLocaleString()         : "N/A", "text-success", "shield-check"),
-              buildMetricCard("Suspicious",   s.suspicious        !== undefined ? s.suspicious.toLocaleString()       : "N/A", "text-secondary", "exclamation-octagon-fill"),
-              buildMetricCard("Avg Risk Score", s.avg_risk_score !== undefined ? (parseFloat(s.avg_risk_score)).toFixed(1) : "N/A", "text-info", "speedometer2")
-            ];
-            resultMetrics.innerHTML = cards.join("");
-            resultPanel.classList.remove("d-none");
-            resultPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-          } else {
-            showAlert("danger", "<strong>Demo Analysis Error:</strong> " + (d.message || "Unknown error"));
-          }
-        })
-        .catch((err) => {
-          demoBtn.disabled = false;
-          demoBtn.innerHTML = '<i class="bi bi-lightning-charge-fill me-1"></i>Run Demo Batch (100 Invoices)';
-          showAlert("danger", "Network error during demo run: " + err.message);
-        });
-    });
-  }
 })();
 </script>
 {% endblock %}

@@ -28,7 +28,7 @@
   />
 
   <!-- Custom Site Stylesheet -->
-  <link rel="stylesheet" href="/static/css/style.css" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css', v='profile-menu-20261014') }}" />
 
   {% block extra_css %}{% endblock %}
 </head>
@@ -68,8 +68,44 @@
           <span>Copilot AI</span>
         </a>
 
+        <div class="nav-profile-menu dropdown">
+          <button
+            class="nav-profile-btn dropdown-toggle"
+            type="button"
+            data-bs-toggle="dropdown"
+            aria-expanded="false"
+            aria-label="Open profile menu"
+          >
+            <span class="nav-profile-avatar">
+              <i class="bi bi-person-fill"></i>
+            </span>
+            <span class="nav-profile-name">{{ session.get("user") or "Profile" }}</span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end nav-profile-dropdown">
+            <li class="nav-profile-dropdown-header">
+              <span class="nav-profile-dropdown-avatar"><i class="bi bi-person-fill"></i></span>
+              <span>
+                <strong>{{ session.get("user") or "Profile" }}</strong>
+                <small>Compliance Officer</small>
+              </span>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item" href="/profile">
+                <i class="bi bi-person-vcard me-2"></i>Profile
+              </a>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <a class="dropdown-item logout-item" href="/logout">
+                <i class="bi bi-box-arrow-left me-2"></i>Logout
+              </a>
+            </li>
+          </ul>
+        </div>
+
         <span class="navbar-tagline d-none d-xl-inline">
-          MSME Risk Intelligence &bull; Section 16(2)
+          GST Risk Intelligence
         </span>
       </div>
     </div>
@@ -201,7 +237,7 @@
   ====================================================== -->
   <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
-    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc4s9bIOgUxi8T/jzmaBMAFkqNFyCSgu1NDNQbBBGrqC"
+    integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
     crossorigin="anonymous"
   ></script>
 

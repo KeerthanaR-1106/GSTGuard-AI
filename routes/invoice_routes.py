@@ -93,7 +93,8 @@ def invoice_detail_view(invoice_no):
         "invoice_details.html",
         invoice=invoice,
         explanation=explanation_data,
-        recommendations=recommendations_data
+        recommendations=recommendations_data,
+        back_to_queue=request.args.get("return_to") == "review-queue",
     )
 
 

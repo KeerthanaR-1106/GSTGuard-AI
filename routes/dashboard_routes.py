@@ -86,6 +86,22 @@ def dashboard_view():
     )
 
 
+@dashboard_bp.route("/profile")
+def profile_view():
+    """Render the signed-in user's profile summary."""
+    if not session.get("logged_in"):
+        return redirect(url_for("dashboard.login_view"))
+
+    username = session.get("user") or "Compliance Officer"
+    return render_template(
+        "profile.html",
+        username=username,
+        user_role="Compliance Officer",
+        last_login="Today",
+        active_page="profile",
+    )
+
+
 # ── REST API ENDPOINTS ────────────────────────────────────────────────────────
 
 @dashboard_bp.route("/api/dashboard", methods=["GET"])

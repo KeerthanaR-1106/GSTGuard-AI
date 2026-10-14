@@ -114,7 +114,7 @@
             </span>
           </td>
           <td>
-            <a href="/invoice/{{ item.invoice_no }}" class="fw-bold text-primary font-monospace text-decoration-none">
+            <a href="{{ url_for('invoices.invoice_detail_view', invoice_no=item.invoice_no, return_to='review-queue') }}" class="fw-bold text-primary font-monospace text-decoration-none">
               {{ item.invoice_no }}
             </a>
           </td>
@@ -150,7 +150,7 @@
             </select>
           </td>
           <td class="text-end pe-3">
-            <a href="/invoice/{{ item.invoice_no }}" class="btn btn-sm btn-outline-danger py-1 px-3 rounded-pill" style="font-size:0.75rem;">
+            <a href="{{ url_for('invoices.invoice_detail_view', invoice_no=item.invoice_no, return_to='review-queue') }}" class="btn btn-sm btn-outline-danger py-1 px-3 rounded-pill" style="font-size:0.75rem;">
               Audit &rarr;
             </a>
           </td>
